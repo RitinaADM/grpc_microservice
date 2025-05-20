@@ -1,25 +1,39 @@
+import logging
+
 import grpc
+from grpc.aio import ServicerContext
+from logging import Logger
+from pydantic import ValidationError
+from typing import Optional
+import uuid
 from src.domain.py_proto import service_pb2, service_pb2_grpc
 from src.domain.ports.inbound.services.document import DocumentServicePort
 from src.domain.exceptions.document import DocumentNotFoundException
 from src.domain.exceptions.base import BaseAppException
 from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
-from pydantic import ValidationError
-import logging
-import uuid
-from google.protobuf import json_format
 
 class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
-    def __init__(self, service: DocumentServicePort):
-        self.service = service
-        self.logger = logging.getLogger(__name__)
+    """gRPC сервис для обработки запросов к документам."""
 
-    def _set_validation_error_details(self, context, error: ValidationError):
-        details = json_format.MessageToDict(error.errors()[0]["ctx"]["error"]) if error.errors() else {"message": str(error)}
-        context.set_details(json_format.MessageToJson(details))
+    def __init__(self, service: DocumentServicePort):
+        """Инициализация сервиса с внедрением зависимости."""
+        self.service: DocumentServicePort = service
+        self.logger: Logger = logging.getLogger(__name__)
+
+    def _set_validation_error_details(self, context: ServicerContext, error: ValidationError) -> None:
+        """Устанавливает детали ошибки валидации для gRPC ответа."""
+        if error.errors():
+            first_error = error.errors()[0]
+            field = ".".join(str(loc) for loc in first_error["loc"])
+            message = first_error["msg"]
+            details = f"Validation error for field '{field}': {message}"
+        else:
+            details = str(error)
+        context.set_details(details)
         context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
 
-    async def GetDocument(self, request, context):
+    async def GetDocument(self, request: service_pb2.GetDocumentRequest, context: ServicerContext) -> service_pb2.Document:
+        """Получение документа по ID."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received GetDocument request for ID: {request.id}", extra={"request_id": request_id})
         try:
@@ -38,6 +52,11 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             self.logger.error(f"Validation error: {str(e)}", extra={"request_id": request_id})
             self._set_validation_error_details(context, e)
             return service_pb2.Document()
+        except ValueError as e:
+            self.logger.error(f"Invalid UUID: {str(e)}", extra={"request_id": request_id})
+            context.set_details("Invalid document ID format")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return service_pb2.Document()
         except DocumentNotFoundException as e:
             self.logger.warning(f"GetDocument failed: {str(e)}", extra={"request_id": request_id})
             context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -54,7 +73,8 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             context.set_details("Internal server error")
             return service_pb2.Document()
 
-    async def CreateDocument(self, request, context):
+    async def CreateDocument(self, request: service_pb2.CreateDocumentRequest, context: ServicerContext) -> service_pb2.Document:
+        """Создание нового документа."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received CreateDocument request: {request.title}", extra={"request_id": request_id})
         try:
@@ -84,7 +104,8 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             context.set_details("Internal server error")
             return service_pb2.Document()
 
-    async def UpdateDocument(self, request, context):
+    async def UpdateDocument(self, request: service_pb2.UpdateDocumentRequest, context: ServicerContext) -> service_pb2.Document:
+        """Обновление документа по ID."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received UpdateDocument request for ID: {request.id}", extra={"request_id": request_id})
         try:
@@ -104,6 +125,11 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             self.logger.error(f"Validation error: {str(e)}", extra={"request_id": request_id})
             self._set_validation_error_details(context, e)
             return service_pb2.Document()
+        except ValueError as e:
+            self.logger.error(f"Invalid UUID: {str(e)}", extra={"request_id": request_id})
+            context.set_details("Invalid document ID format")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return service_pb2.Document()
         except DocumentNotFoundException as e:
             self.logger.warning(f"UpdateDocument failed: {str(e)}", extra={"request_id": request_id})
             context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -120,7 +146,8 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             context.set_details("Internal server error")
             return service_pb2.Document()
 
-    async def DeleteDocument(self, request, context):
+    async def DeleteDocument(self, request: service_pb2.DeleteDocumentRequest, context: ServicerContext) -> service_pb2.DeleteDocumentResponse:
+        """Мягкое удаление документа по ID."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received DeleteDocument request for ID: {request.id}", extra={"request_id": request_id})
         try:
@@ -131,6 +158,11 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
         except ValidationError as e:
             self.logger.error(f"Validation error: {str(e)}", extra={"request_id": request_id})
             self._set_validation_error_details(context, e)
+            return service_pb2.DeleteDocumentResponse(success=False)
+        except ValueError as e:
+            self.logger.error(f"Invalid UUID: {str(e)}", extra={"request_id": request_id})
+            context.set_details("Invalid document ID format")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             return service_pb2.DeleteDocumentResponse(success=False)
         except DocumentNotFoundException as e:
             self.logger.warning(f"DeleteDocument failed: {str(e)}", extra={"request_id": request_id})
@@ -148,7 +180,8 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             context.set_details("Internal server error")
             return service_pb2.DeleteDocumentResponse(success=False)
 
-    async def RestoreDocument(self, request, context):
+    async def RestoreDocument(self, request: service_pb2.GetDocumentRequest, context: ServicerContext) -> service_pb2.Document:
+        """Восстановление удаленного документа по ID."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received RestoreDocument request for ID: {request.id}", extra={"request_id": request_id})
         try:
@@ -167,6 +200,11 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             self.logger.error(f"Validation error: {str(e)}", extra={"request_id": request_id})
             self._set_validation_error_details(context, e)
             return service_pb2.Document()
+        except ValueError as e:
+            self.logger.error(f"Invalid UUID: {str(e)}", extra={"request_id": request_id})
+            context.set_details("Invalid document ID format")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return service_pb2.Document()
         except DocumentNotFoundException as e:
             self.logger.warning(f"RestoreDocument failed: {str(e)}", extra={"request_id": request_id})
             context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -183,7 +221,8 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             context.set_details("Internal server error")
             return service_pb2.Document()
 
-    async def ListDocuments(self, request, context):
+    async def ListDocuments(self, request: service_pb2.ListDocumentsRequest, context: ServicerContext) -> service_pb2.ListDocumentsResponse:
+        """Получение списка документов с пагинацией."""
         request_id = str(uuid.uuid4())[:8]
         self.logger.info(f"Received ListDocuments request with skip: {request.skip}, limit: {request.limit}", extra={"request_id": request_id})
         try:

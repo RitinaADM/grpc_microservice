@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+service DocumentService {
+    rpc GetDocument (GetDocumentRequest) returns (Document);
+    rpc CreateDocument (CreateDocumentRequest) returns (Document);
+    rpc UpdateDocument (UpdateDocumentRequest) returns (Document);
+    rpc DeleteDocument (DeleteDocumentRequest) returns (DeleteDocumentResponse);
+    rpc RestoreDocument (GetDocumentRequest) returns (Document);
+    rpc ListDocuments (ListDocumentsRequest) returns (ListDocumentsResponse);
+}
+
+message GetDocumentRequest {
+    string id = 1;
+}
+
+message CreateDocumentRequest {
+    string title = 1;
+    string content = 2;
+}
+
+message UpdateDocumentRequest {
+    string id = 1;
+    string title = 2;
+    string content = 3;
+}
+
+message DeleteDocumentRequest {
+    string id = 1;
+}
+
+message ListDocumentsRequest {
+    int32 skip = 1;
+    int32 limit = 2;
+}
+
+message Document {
+    string id = 1;
+    string title = 2;
+    string content = 3;
+    string created_at = 4;
+    string updated_at = 5;
+    bool is_deleted = 6;
+}
+
+message DeleteDocumentResponse {
+    bool success = 1;
+}
+
+message ListDocumentsResponse {
+    repeated Document documents = 1;
+}

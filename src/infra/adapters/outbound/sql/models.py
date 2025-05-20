@@ -1,14 +1,16 @@
-from beanie import Document as BeanieDocument
-from uuid import UUID
-from datetime import datetime
+from sqlalchemy import Column, String, Boolean, DateTime, func
+from sqlalchemy.dialects.postgresql import UUID as SQLUUID
+from sqlalchemy.ext.declarative import declarative_base
+from uuid import uuid4
 
-class MongoDocument(BeanieDocument):
-    id: UUID
-    title: str
-    content: str
-    created_at: datetime
-    updated_at: datetime
-    is_deleted: bool
+Base = declarative_base()
 
-    class Settings:
-        name = "documents"
+class SQLDocument(Base):
+    __tablename__ = "documents"
+
+    id = Column(SQLUUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    is_deleted = Column(Boolean, default=False)

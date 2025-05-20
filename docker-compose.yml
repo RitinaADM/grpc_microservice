@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${GRPC_PORT:-50051}:50051"
+    environment:
+      - DB_TYPE=${DB_TYPE}
+      - DB_URL=${DB_URL}
+      - DB_NAME=${DB_NAME}
+      - GRPC_PORT=${GRPC_PORT}
+      - LOG_LEVEL=${LOG_LEVEL}
+    depends_on:
+      - mongo
+      - postgres
+
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: microservice_db
+    ports:
+      - "5432:5432"
