@@ -1,0 +1,5 @@
+DB_TYPE=POSTGRES
+DB_URL=postgresql+asyncpg://user:password@postgres:5432/microservice_db
+DB_NAME=microservice_db
+GRPC_PORT=50051
+LOG_LEVEL=INFO
