@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from src.app import serve
 import logging
 from src.infra.config.logging import setup_logging
+from redis.asyncio import Redis
+
 
 async def init_db():
     setup_logging()
@@ -26,9 +28,19 @@ async def init_db():
         logger.error("Unsupported database type")
         raise ValueError("Неподдерживаемый тип базы данных")
 
+
 async def main():
+    # Инициализация базы данных
     await init_db()
+
+    # Запуск gRPC сервера
     await serve()
 
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Закрытие соединения с Redis
+        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        asyncio.run(redis.aclose())

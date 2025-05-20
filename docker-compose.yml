@@ -9,9 +9,11 @@ services:
       - DB_NAME=${DB_NAME}
       - GRPC_PORT=${GRPC_PORT}
       - LOG_LEVEL=${LOG_LEVEL}
+      - REDIS_URL=${REDIS_URL}
     depends_on:
       - mongo
       - postgres
+      - redis
 
   mongo:
     image: mongo:6.0
@@ -26,3 +28,8 @@ services:
       POSTGRES_DB: microservice_db
     ports:
       - "5432:5432"
+
+  redis:
+    image: redis:7.2
+    ports:
+      - "6379:6379"

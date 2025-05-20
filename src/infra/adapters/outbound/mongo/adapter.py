@@ -1,4 +1,4 @@
-import logging  # Исправлен импорт logging
+import logging
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -21,9 +21,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def get_by_id(self, id: UUID) -> Optional[DomainDocument]:
         """Получение документа по ID из MongoDB."""
@@ -35,9 +33,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def create(self, document: DomainDocument) -> DomainDocument:
         """Создание документа в MongoDB."""
@@ -50,9 +46,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[DomainDocument]:
         """Обновление документа в MongoDB."""
@@ -71,9 +65,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def delete(self, id: UUID) -> bool:
         """Мягкое удаление документа из MongoDB."""
@@ -90,9 +82,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def list_documents(self, skip: int, limit: int) -> List[DomainDocument]:
         """Получение списка документов из MongoDB с пагинацией."""
@@ -104,9 +94,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
-        before_sleep=lambda retry_state: logging.getLogger(__name__).warning(
-            f"Retrying operation (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
-        )
+        before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def restore(self, id: UUID) -> Optional[DomainDocument]:
         """Восстановление документа в MongoDB."""

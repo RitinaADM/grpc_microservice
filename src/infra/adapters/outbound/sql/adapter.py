@@ -8,6 +8,8 @@ from src.domain.models.document import Document
 from src.infra.adapters.outbound.sql.models import SQLDocument
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
 from src.domain.dtos.document import DocumentUpdateDTO
+import logging
+from logging import Logger
 
 class SQLDocumentAdapter(DocumentRepositoryPort):
     """Адаптер для работы с PostgreSQL."""
@@ -15,9 +17,11 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
     def __init__(self, session: AsyncSession):
         """Инициализация адаптера с сессией SQLAlchemy."""
         self.session: AsyncSession = session
+        self.logger: Logger = logging.getLogger(__name__)
 
     async def get_by_id(self, id: UUID) -> Optional[Document]:
         """Получение документа по ID из PostgreSQL."""
+        self.logger.debug(f"Fetching document from PostgreSQL with ID: {id}")
         result = await self.session.execute(
             select(SQLDocument).where(SQLDocument.id == id, SQLDocument.is_deleted == False)
         )
@@ -25,39 +29,48 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
         return self._to_domain(sql_doc) if sql_doc else None
 
     async def create(self, document: Document) -> Document:
-        """Создание документа в PostgreSQL."""
-        sql_doc = self._to_sql(document)
-        self.session.add(sql_doc)
-        await self.session.commit()
-        await self.session.refresh(sql_doc)
+        """Создание документа в PostgreSQL с транзакцией."""
+        self.logger.debug(f"Creating document in PostgreSQL: {document.id}")
+        async with self.session.begin():  # Открываем транзакцию
+            sql_doc = self._to_sql(document)
+            self.session.add(sql_doc)
+            await self.session.flush()  # Синхронизируем данные без коммита
+            await self.session.refresh(sql_doc)  # Обновляем объект
         return self._to_domain(sql_doc)
 
     async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
-        """Обновление документа в PostgreSQL."""
-        update_data = {k: v for k, v in data.dict(exclude_none=True).items() if k != 'id'}
-        if not update_data:
-            return await self.get_by_id(id)  # Если нет данных для обновления, возвращаем текущий документ
-        update_data['updated_at'] = datetime.utcnow()
-        await self.session.execute(
-            update(SQLDocument)
-            .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-            .values(**update_data)
-        )
-        await self.session.commit()
-        return await self.get_by_id(id)
+        """Обновление документа в PostgreSQL с транзакцией."""
+        self.logger.debug(f"Updating document in PostgreSQL with ID: {id}, data: {data.dict(exclude_none=True)}")
+        async with self.session.begin():  # Открываем транзакцию
+            update_data = {k: v for k, v in data.dict(exclude_none=True).items() if k != 'id'}
+            if not update_data:
+                return await self.get_by_id(id)  # Если нет данных для обновления, возвращаем текущий документ
+            update_data['updated_at'] = datetime.utcnow()
+            result = await self.session.execute(
+                update(SQLDocument)
+                .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
+                .values(**update_data)
+                .returning(SQLDocument)  # Возвращаем обновленный объект
+            )
+            sql_doc = result.scalars().first()
+            if not sql_doc:
+                return None
+            return self._to_domain(sql_doc)
 
     async def delete(self, id: UUID) -> bool:
-        """Мягкое удаление документа из PostgreSQL."""
-        result = await self.session.execute(
-            update(SQLDocument)
-            .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-            .values(is_deleted=True, updated_at=datetime.utcnow())
-        )
-        await self.session.commit()
+        """Мягкое удаление документа из PostgreSQL с транзакцией."""
+        self.logger.debug(f"Soft deleting document from PostgreSQL with ID: {id}")
+        async with self.session.begin():  # Открываем транзакцию
+            result = await self.session.execute(
+                update(SQLDocument)
+                .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
+                .values(is_deleted=True, updated_at=datetime.utcnow())
+            )
         return result.rowcount > 0
 
     async def list_documents(self, skip: int, limit: int) -> List[Document]:
         """Получение списка документов из PostgreSQL с пагинацией."""
+        self.logger.debug(f"Fetching documents from PostgreSQL with skip: {skip}, limit: {limit}")
         result = await self.session.execute(
             select(SQLDocument)
             .where(SQLDocument.is_deleted == False)
@@ -69,16 +82,19 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
         return [self._to_domain(doc) for doc in sql_docs]
 
     async def restore(self, id: UUID) -> Optional[Document]:
-        """Восстановление документа в PostgreSQL."""
-        result = await self.session.execute(
-            update(SQLDocument)
-            .where(SQLDocument.id == id, SQLDocument.is_deleted == True)
-            .values(is_deleted=False, updated_at=datetime.utcnow())
-        )
-        await self.session.commit()
-        if result.rowcount > 0:
-            return await self.get_by_id(id)
-        return None
+        """Восстановление документа в PostgreSQL с транзакцией."""
+        self.logger.debug(f"Restoring document in PostgreSQL with ID: {id}")
+        async with self.session.begin():  # Открываем транзакцию
+            result = await self.session.execute(
+                update(SQLDocument)
+                .where(SQLDocument.id == id, SQLDocument.is_deleted == True)
+                .values(is_deleted=False, updated_at=datetime.utcnow())
+                .returning(SQLDocument)  # Возвращаем обновленный объект
+            )
+            sql_doc = result.scalars().first()
+            if not sql_doc:
+                return None
+            return self._to_domain(sql_doc)
 
     def _to_domain(self, sql_doc: Optional[SQLDocument]) -> Optional[Document]:
         """Конвертация SQLAlchemy модели в доменную модель."""

@@ -1,12 +1,17 @@
-beanie==1.29.0
-motor==3.7.1
 pydantic==2.11.4
 pydantic-settings==2.9.1
+tenacity==8.5.0
+#DI
+dishka==1.5.3
+#GRPC
 grpcio==1.71.0
 grpcio-tools==1.71.0
 grpcio-reflection==1.71.0
-dishka==1.5.3
-tenacity==8.5.0
-
-sqlalchemy==1.4.52
-asyncpg==0.29.0  # Для асинхронного подключения
+#SQL
+sqlalchemy==2.0.31
+asyncpg==0.29.0
+#NOSQL
+beanie==1.29.0
+motor==3.7.1
+#Redis
+redis==5.0.8
