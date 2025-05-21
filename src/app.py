@@ -1,7 +1,7 @@
 import grpc
 from concurrent import futures
 from dishka import make_async_container
-from src.domain.py_proto import service_pb2, service_pb2_grpc
+from src.infra.adapters.inbound.grpc.py_proto import service_pb2_grpc, service_pb2
 from src.infra.di.provider import AppProvider
 from src.infra.adapters.inbound.grpc.adapter import DocumentServiceServicer
 import logging

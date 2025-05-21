@@ -5,6 +5,8 @@ from src.domain.models.document import Document
 import logging
 from logging import Logger
 from src.infra.config.settings import settings
+from uuid import UUID
+from datetime import datetime
 
 class RedisCacheAdapter:
     """Адаптер для работы с Redis в качестве кэша."""
@@ -14,6 +16,21 @@ class RedisCacheAdapter:
         self.redis: Redis = redis_client
         self.logger: Logger = logging.getLogger(__name__)
 
+    def _serialize_document(self, document: Document) -> dict:
+        """Сериализация документа в JSON-совместимый словарь."""
+        doc_dict = document.dict()
+        doc_dict['id'] = str(doc_dict['id'])  # Преобразуем UUID в строку
+        doc_dict['created_at'] = doc_dict['created_at'].isoformat()  # Преобразуем datetime в строку
+        doc_dict['updated_at'] = doc_dict['updated_at'].isoformat()  # Преобразуем datetime в строку
+        return doc_dict
+
+    def _deserialize_document(self, doc_dict: dict) -> Document:
+        """Десериализация словаря в объект Document."""
+        doc_dict['id'] = UUID(doc_dict['id'])  # Преобразуем строку в UUID
+        doc_dict['created_at'] = datetime.fromisoformat(doc_dict['created_at'])  # Преобразуем строку в datetime
+        doc_dict['updated_at'] = datetime.fromisoformat(doc_dict['updated_at'])  # Преобразуем строку в datetime
+        return Document(**doc_dict)
+
     async def get_document(self, document_id: str) -> Optional[Document]:
         """Получение документа из кэша по ID."""
         self.logger.debug(f"Fetching document from cache: {document_id}")
@@ -21,7 +38,8 @@ class RedisCacheAdapter:
             cached = await self.redis.get(f"document:{document_id}")
             if cached:
                 self.logger.debug(f"Cache hit for document: {document_id}")
-                return Document(**json.loads(cached))
+                document_dict = json.loads(cached)
+                return self._deserialize_document(document_dict)
             self.logger.debug(f"Cache miss for document: {document_id}")
             return None
         except Exception as e:
@@ -32,10 +50,11 @@ class RedisCacheAdapter:
         """Сохранение документа в кэш."""
         self.logger.debug(f"Setting document in cache: {document.id}")
         try:
+            document_dict = self._serialize_document(document)
             await self.redis.setex(
                 f"document:{document.id}",
                 settings.CACHE_TTL,
-                json.dumps(document.dict())
+                json.dumps(document_dict)
             )
             self.logger.debug(f"Document cached: {document.id}")
         except Exception as e:
@@ -49,7 +68,8 @@ class RedisCacheAdapter:
             cached = await self.redis.get(cache_key)
             if cached:
                 self.logger.debug(f"Cache hit for document list: {cache_key}")
-                return [Document(**doc) for doc in json.loads(cached)]
+                documents_dict = json.loads(cached)
+                return [self._deserialize_document(doc_dict) for doc_dict in documents_dict]
             self.logger.debug(f"Cache miss for document list: {cache_key}")
             return None
         except Exception as e:
@@ -61,10 +81,11 @@ class RedisCacheAdapter:
         cache_key = f"documents:skip:{skip}:limit:{limit}"
         self.logger.debug(f"Setting document list in cache: {cache_key}")
         try:
+            documents_dict = [self._serialize_document(doc) for doc in documents]
             await self.redis.setex(
                 cache_key,
                 settings.CACHE_TTL,
-                json.dumps([doc.dict() for doc in documents])
+                json.dumps(documents_dict)
             )
             self.logger.debug(f"Document list cached: {cache_key}")
         except Exception as e:

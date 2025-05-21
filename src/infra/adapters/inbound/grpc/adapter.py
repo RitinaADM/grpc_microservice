@@ -4,9 +4,8 @@ import grpc
 from grpc.aio import ServicerContext
 from logging import Logger
 from pydantic import ValidationError
-from typing import Optional
 import uuid
-from src.domain.py_proto import service_pb2, service_pb2_grpc
+from src.infra.adapters.inbound.grpc.py_proto import service_pb2_grpc, service_pb2
 from src.domain.ports.inbound.services.document import DocumentServicePort
 from src.domain.exceptions.document import DocumentNotFoundException
 from src.domain.exceptions.base import BaseAppException

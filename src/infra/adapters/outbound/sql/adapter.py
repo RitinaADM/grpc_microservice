@@ -11,6 +11,7 @@ from src.domain.dtos.document import DocumentUpdateDTO
 import logging
 from logging import Logger
 
+
 class SQLDocumentAdapter(DocumentRepositoryPort):
     """Адаптер для работы с PostgreSQL."""
 
@@ -19,8 +20,14 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
         self.session: AsyncSession = session
         self.logger: Logger = logging.getLogger(__name__)
 
+    async def _ensure_no_active_transaction(self):
+        """Проверяет, что на сессии нет активной транзакции."""
+        if self.session.in_transaction():
+            self.logger.warning("Session has an active transaction; rolling back")
+            await self.session.rollback()
+
     async def get_by_id(self, id: UUID) -> Optional[Document]:
-        """Получение документа по ID из PostgreSQL."""
+        """Получение документа по ID из PostgreSQL (без транзакции)."""
         self.logger.debug(f"Fetching document from PostgreSQL with ID: {id}")
         result = await self.session.execute(
             select(SQLDocument).where(SQLDocument.id == id, SQLDocument.is_deleted == False)
@@ -31,6 +38,7 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
     async def create(self, document: Document) -> Document:
         """Создание документа в PostgreSQL с транзакцией."""
         self.logger.debug(f"Creating document in PostgreSQL: {document.id}")
+        await self._ensure_no_active_transaction()
         async with self.session.begin():  # Открываем транзакцию
             sql_doc = self._to_sql(document)
             self.session.add(sql_doc)
@@ -41,6 +49,7 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
     async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
         """Обновление документа в PostgreSQL с транзакцией."""
         self.logger.debug(f"Updating document in PostgreSQL with ID: {id}, data: {data.dict(exclude_none=True)}")
+        await self._ensure_no_active_transaction()
         async with self.session.begin():  # Открываем транзакцию
             update_data = {k: v for k, v in data.dict(exclude_none=True).items() if k != 'id'}
             if not update_data:
@@ -59,17 +68,20 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
 
     async def delete(self, id: UUID) -> bool:
         """Мягкое удаление документа из PostgreSQL с транзакцией."""
-        self.logger.debug(f"Soft deleting document from PostgreSQL with ID: {id}")
+        self.logger.debug(f"Starting soft delete for document ID: {id}")
+        await self._ensure_no_active_transaction()
         async with self.session.begin():  # Открываем транзакцию
             result = await self.session.execute(
                 update(SQLDocument)
                 .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
                 .values(is_deleted=True, updated_at=datetime.utcnow())
             )
+            self.logger.debug(f"Soft delete result: {result.rowcount} rows affected")
+        self.logger.debug(f"Completed soft delete for document ID: {id}")
         return result.rowcount > 0
 
     async def list_documents(self, skip: int, limit: int) -> List[Document]:
-        """Получение списка документов из PostgreSQL с пагинацией."""
+        """Получение списка документов из PostgreSQL с пагинацией (без транзакции)."""
         self.logger.debug(f"Fetching documents from PostgreSQL with skip: {skip}, limit: {limit}")
         result = await self.session.execute(
             select(SQLDocument)
@@ -83,7 +95,8 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
 
     async def restore(self, id: UUID) -> Optional[Document]:
         """Восстановление документа в PostgreSQL с транзакцией."""
-        self.logger.debug(f"Restoring document in PostgreSQL with ID: {id}")
+        self.logger.debug(f"Starting restore for document ID: {id}")
+        await self._ensure_no_active_transaction()
         async with self.session.begin():  # Открываем транзакцию
             result = await self.session.execute(
                 update(SQLDocument)
@@ -92,6 +105,7 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
                 .returning(SQLDocument)  # Возвращаем обновленный объект
             )
             sql_doc = result.scalars().first()
+            self.logger.debug(f"Restore result: {'success' if sql_doc else 'not found'} for document ID: {id}")
             if not sql_doc:
                 return None
             return self._to_domain(sql_doc)
