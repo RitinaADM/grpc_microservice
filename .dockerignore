@@ -7,7 +7,6 @@ env/
 venv/
 .env
 *.log
-tests/
 .git
 .gitignore
 .idea/

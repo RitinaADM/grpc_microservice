@@ -12,6 +12,7 @@ EXCLUDED_DIRS = {
     ".git",         # Репозиторий Git
     ".idea",
     ".pytest_cache",
+    "tests"
     #"proto"
 }
 
@@ -23,7 +24,9 @@ EXCLUDED_FILES = {
     "readme.md",
     "p_t.py",
     "gen_jwt.py",
-    "coverage.xml"
+    "coverage.xml",
+    "service_pb2.py",
+    "service_pb2_grpc"
 
 }
 

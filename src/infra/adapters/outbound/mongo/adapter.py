@@ -1,21 +1,20 @@
 import logging
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime
 from pymongo.errors import ConnectionFailure, OperationFailure
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from logging import Logger
-from src.domain.models.document import Document as DomainDocument
+from src.domain.models.document import Document, DocumentVersion
 from src.infra.adapters.outbound.mongo.models import MongoDocument
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
 from src.domain.dtos.document import DocumentUpdateDTO
+from src.infra.adapters.outbound.mongo.mapper import MongoMapper
 
 class MongoDocumentAdapter(DocumentRepositoryPort):
-    """Адаптер для работы с MongoDB."""
-
     def __init__(self):
-        """Инициализация адаптера с настройкой логгера."""
         self.logger: Logger = logging.getLogger(__name__)
+        self.mapper = MongoMapper()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -23,11 +22,20 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
-    async def get_by_id(self, id: UUID) -> Optional[DomainDocument]:
-        """Получение документа по ID из MongoDB."""
-        self.logger.debug(f"Fetching document from MongoDB with ID: {id}")
+    async def get_by_id(self, id: UUID) -> Optional[Document]:
+        """
+        Получает документ из MongoDB по его UUID.
+
+        Args:
+            id: UUID документа.
+
+        Returns:
+            Document: Доменная модель документа, если найден.
+            None: Если документ не найден или помечен как удаленный.
+        """
+        self.logger.debug(f"Получение документа из MongoDB с ID: {id}")
         mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
-        return self._to_domain(mongo_doc) if mongo_doc else None
+        return self.mapper.to_domain_document(mongo_doc) if mongo_doc else None
 
     @retry(
         stop=stop_after_attempt(3),
@@ -35,10 +43,18 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
-    async def create(self, document: DomainDocument) -> DomainDocument:
-        """Создание документа в MongoDB."""
-        self.logger.debug(f"Creating document in MongoDB: {document.id}")
-        mongo_doc = self._to_mongo(document)
+    async def create(self, document: Document) -> Document:
+        """
+        Создает новый документ в MongoDB.
+
+        Args:
+            document: Доменная модель документа.
+
+        Returns:
+            Document: Созданная доменная модель документа.
+        """
+        self.logger.debug(f"Создание документа в MongoDB: {document.id}")
+        mongo_doc = self.mapper.to_mongo_document(document)
         await mongo_doc.insert()
         return document
 
@@ -48,17 +64,58 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
-    async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[DomainDocument]:
-        """Обновление документа в MongoDB."""
-        self.logger.debug(f"Updating document in MongoDB with ID: {id}, data: {data.dict(exclude_none=True)}")
+    async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
+        """
+        Обновляет документ в MongoDB по его UUID.
+
+        Args:
+            id: UUID документа.
+            data: DTO с данными для обновления.
+
+        Returns:
+            Document: Обновленная доменная модель документа, если найден.
+            None: Если документ не найден или помечен как удаленный.
+        """
+        self.logger.debug(f"Обновление документа в MongoDB с ID: {id}")
         mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
         if mongo_doc:
-            update_data = data.dict(exclude_none=True)
-            for key, value in update_data.items():
-                setattr(mongo_doc, key, value)
+            # Сохраняем текущую версию документа
+            try:
+                current_version = DocumentVersion(
+                    version_id=uuid4(),
+                    content=mongo_doc.content,
+                    metadata=mongo_doc.metadata,
+                    comments=mongo_doc.comments,
+                    timestamp=datetime.utcnow()
+                )
+                mongo_doc.versions.append(current_version)
+                self.logger.debug(f"Сохранена версия документа с ID: {id}, version_id: {current_version.version_id}")
+            except Exception as e:
+                self.logger.error(f"Ошибка при создании версии документа с ID: {id}: {str(e)}")
+                raise
+
+            # Применяем обновления
+            if data.title is not None:
+                mongo_doc.title = data.title
+            if data.content is not None:
+                mongo_doc.content = data.content
+            if data.status is not None:
+                mongo_doc.status = data.status
+            if data.metadata is not None:
+                mongo_doc.metadata = data.metadata
+            if data.comments is not None:
+                mongo_doc.comments = data.comments
             mongo_doc.updated_at = datetime.utcnow()
-            await mongo_doc.save()
-            return self._to_domain(mongo_doc)
+
+            # Сохраняем обновленный документ
+            try:
+                await mongo_doc.save()
+                self.logger.debug(f"Документ с ID: {id} успешно обновлен")
+                return self.mapper.to_domain_document(mongo_doc)
+            except Exception as e:
+                self.logger.error(f"Ошибка при сохранении документа с ID: {id}: {str(e)}")
+                raise
+        self.logger.warning(f"Документ с ID: {id} не найден или помечен как удаленный")
         return None
 
     @retry(
@@ -68,8 +125,16 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
     async def delete(self, id: UUID) -> bool:
-        """Мягкое удаление документа из MongoDB."""
-        self.logger.debug(f"Soft deleting document from MongoDB with ID: {id}")
+        """
+        Выполняет мягкое удаление документа в MongoDB.
+
+        Args:
+            id: UUID документа.
+
+        Returns:
+            bool: True, если документ успешно помечен как удаленный, иначе False.
+        """
+        self.logger.debug(f"Мягкое удаление документа из MongoDB с ID: {id}")
         mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
         if mongo_doc:
             mongo_doc.is_deleted = True
@@ -84,11 +149,20 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
-    async def list_documents(self, skip: int, limit: int) -> List[DomainDocument]:
-        """Получение списка документов из MongoDB с пагинацией."""
-        self.logger.debug(f"Fetching documents from MongoDB with skip: {skip}, limit: {limit}")
+    async def list_documents(self, skip: int, limit: int) -> List[Document]:
+        """
+        Получает список документов из MongoDB с пагинацией.
+
+        Args:
+            skip: Количество документов для пропуска.
+            limit: Максимальное количество документов для возврата.
+
+        Returns:
+            List[Document]: Список доменных моделей документов.
+        """
+        self.logger.debug(f"Получение документов из MongoDB с skip: {skip}, limit: {limit}")
         mongo_docs = await MongoDocument.find(MongoDocument.is_deleted == False).skip(skip).limit(limit).to_list()
-        return [self._to_domain(doc) for doc in mongo_docs]
+        return [self.mapper.to_domain_document(doc) for doc in mongo_docs]
 
     @retry(
         stop=stop_after_attempt(3),
@@ -96,37 +170,22 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure)),
         before_sleep=lambda retry_state: retry_state.outcome.exception() and retry_state.outcome.exception().args[0]
     )
-    async def restore(self, id: UUID) -> Optional[DomainDocument]:
-        """Восстановление документа в MongoDB."""
-        self.logger.debug(f"Restoring document in MongoDB with ID: {id}")
+    async def restore(self, id: UUID) -> Optional[Document]:
+        """
+        Восстанавливает удаленный документ в MongoDB.
+
+        Args:
+            id: UUID документа.
+
+        Returns:
+            Document: Восстановленная доменная модель документа, если найдена.
+            None: Если документ не найден.
+        """
+        self.logger.debug(f"Восстановление документа в MongoDB с ID: {id}")
         mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == True)
         if mongo_doc:
             mongo_doc.is_deleted = False
             mongo_doc.updated_at = datetime.utcnow()
             await mongo_doc.save()
-            return self._to_domain(mongo_doc)
+            return self.mapper.to_domain_document(mongo_doc)
         return None
-
-    def _to_domain(self, mongo_doc: Optional[MongoDocument]) -> Optional[DomainDocument]:
-        """Конвертация MongoDB документа в доменную модель."""
-        if not mongo_doc:
-            return None
-        return DomainDocument(
-            id=mongo_doc.id,
-            title=mongo_doc.title,
-            content=mongo_doc.content,
-            created_at=mongo_doc.created_at,
-            updated_at=mongo_doc.updated_at,
-            is_deleted=mongo_doc.is_deleted
-        )
-
-    def _to_mongo(self, document: DomainDocument) -> MongoDocument:
-        """Конвертация доменной модели в MongoDB документ."""
-        return MongoDocument(
-            id=document.id,
-            title=document.title,
-            content=document.content,
-            created_at=document.created_at,
-            updated_at=document.updated_at,
-            is_deleted=document.is_deleted
-        )

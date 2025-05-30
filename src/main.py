@@ -8,39 +8,36 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from src.app import serve
 import logging
 from src.infra.config.logging import setup_logging
-from redis.asyncio import Redis
-
 
 async def init_db():
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info(f"Initializing database: {settings.DB_TYPE}")
-    if settings.DB_TYPE == DatabaseType.MONGO:
-        client = AsyncIOMotorClient(settings.DB_URL)
-        await init_beanie(database=client[settings.DB_NAME], document_models=[MongoDocument])
-        logger.info("MongoDB initialized successfully")
-    elif settings.DB_TYPE == DatabaseType.POSTGRES:
-        engine = create_async_engine(settings.DB_URL, echo=True)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("PostgreSQL initialized successfully")
-    else:
-        logger.error("Unsupported database type")
-        raise ValueError("Неподдерживаемый тип базы данных")
-
+    try:
+        if settings.DB_TYPE == DatabaseType.MONGO:
+            client = AsyncIOMotorClient(settings.DB_URL)
+            await init_beanie(database=client[settings.DB_NAME], document_models=[MongoDocument])
+            logger.info("MongoDB successfully initialized")
+        elif settings.DB_TYPE == DatabaseType.POSTGRES:
+            logger.debug("Creating PostgreSQL engine")
+            engine = create_async_engine(settings.DB_URL, echo=True)
+            async with engine.begin() as conn:
+                logger.debug("Creating tables")
+                await conn.run_sync(Base.metadata.create_all)  # Только создание таблиц
+            await engine.dispose()
+            logger.info("PostgreSQL successfully initialized")
+        else:
+            logger.error("Unsupported database type")
+            raise ValueError("Unsupported database type")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {str(e)}", exc_info=True)
+        raise
 
 async def main():
-    # Инициализация базы данных
+    logger = logging.getLogger(__name__)
+    logger.info("Starting application")
     await init_db()
-
-    # Запуск gRPC сервера
     await serve()
 
-
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    finally:
-        # Закрытие соединения с Redis
-        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        asyncio.run(redis.aclose())
+    asyncio.run(main())

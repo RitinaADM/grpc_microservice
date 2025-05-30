@@ -33,3 +33,17 @@ services:
     image: redis:7.2
     ports:
       - "6379:6379"
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - DB_TYPE=${DB_TYPE}
+      - DB_URL=${DB_URL}
+      - DB_NAME=${DB_NAME}
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      - mongo
+      - postgres
+      - redis

@@ -1,12 +1,23 @@
 syntax = "proto3";
 
-service DocumentService {
-    rpc GetDocument (GetDocumentRequest) returns (Document);
-    rpc CreateDocument (CreateDocumentRequest) returns (Document);
-    rpc UpdateDocument (UpdateDocumentRequest) returns (Document);
-    rpc DeleteDocument (DeleteDocumentRequest) returns (DeleteDocumentResponse);
-    rpc RestoreDocument (GetDocumentRequest) returns (Document);
-    rpc ListDocuments (ListDocumentsRequest) returns (ListDocumentsResponse);
+enum DocumentStatus {
+    DRAFT = 0;
+    PUBLISHED = 1;
+    ARCHIVED = 2;
+}
+
+message DocumentMetadata {
+    string author = 1;
+    repeated string tags = 2;
+    string category = 3;
+}
+
+message DocumentVersion {
+    string version_id = 1;
+    string content = 2;
+    DocumentMetadata metadata = 3;
+    repeated string comments = 4;
+    string timestamp = 5;
 }
 
 message GetDocumentRequest {
@@ -16,12 +27,18 @@ message GetDocumentRequest {
 message CreateDocumentRequest {
     string title = 1;
     string content = 2;
+    DocumentStatus status = 3;
+    DocumentMetadata metadata = 4;
+    repeated string comments = 5;
 }
 
 message UpdateDocumentRequest {
     string id = 1;
     string title = 2;
     string content = 3;
+    DocumentStatus status = 4;
+    DocumentMetadata metadata = 5;
+    repeated string comments = 6;
 }
 
 message DeleteDocumentRequest {
@@ -37,9 +54,12 @@ message Document {
     string id = 1;
     string title = 2;
     string content = 3;
-    string created_at = 4;
-    string updated_at = 5;
-    bool is_deleted = 6;
+    DocumentStatus status = 4;
+    DocumentMetadata metadata = 5;
+    repeated string comments = 6;
+    string created_at = 8;
+    string updated_at = 9;
+    bool is_deleted = 10;
 }
 
 message DeleteDocumentResponse {
@@ -48,4 +68,40 @@ message DeleteDocumentResponse {
 
 message ListDocumentsResponse {
     repeated Document documents = 1;
+}
+
+message RestoreDocumentRequest {
+    string id = 1;
+}
+
+message GetDocumentVersionsRequest {
+    string id = 1;  // ID документа
+}
+
+message GetDocumentVersionsResponse {
+    repeated DocumentVersion versions = 1;  // Список версий
+}
+
+message GetDocumentVersionRequest {
+    string id = 1;        // ID документа
+    string version_id = 2; // ID версии
+}
+
+message GetDocumentResponse {
+    Document document = 1;
+}
+
+message UpdateDocumentResponse {
+    Document document = 1;
+}
+
+service DocumentService {
+    rpc GetDocument (GetDocumentRequest) returns (GetDocumentResponse);
+    rpc CreateDocument (CreateDocumentRequest) returns (Document);
+    rpc UpdateDocument (UpdateDocumentRequest) returns (UpdateDocumentResponse);
+    rpc DeleteDocument (DeleteDocumentRequest) returns (DeleteDocumentResponse);
+    rpc RestoreDocument (RestoreDocumentRequest) returns (Document);
+    rpc ListDocuments (ListDocumentsRequest) returns (ListDocumentsResponse);
+    rpc GetDocumentVersions (GetDocumentVersionsRequest) returns (GetDocumentVersionsResponse);
+    rpc GetDocumentVersion (GetDocumentVersionRequest) returns (DocumentVersion);
 }
