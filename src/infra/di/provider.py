@@ -8,8 +8,9 @@ from src.infra.adapters.outbound.mongo.adapter import MongoDocumentAdapter
 from src.infra.adapters.outbound.sql.adapter import SQLDocumentAdapter
 from src.infra.config.settings import settings, DatabaseType
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from redis.asyncio import Redis
+from redis.asyncio import Redis, ConnectionPool
 from src.infra.adapters.outbound.redis.adapter import RedisCacheAdapter
+from src.infra.adapters.outbound.redis.mapper import RedisMapper
 import logging
 from logging import Logger
 
@@ -42,13 +43,15 @@ class AppProvider(Provider):
 
     @provide(scope=Scope.APP)
     async def provide_redis(self) -> AsyncGenerator[Redis, None]:
-        """Предоставляет клиент Redis."""
+        """Предоставляет клиент Redis с пулом соединений."""
         self.logger.debug("Инициализация клиента Redis")
-        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        pool = ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
+        redis = Redis(connection_pool=pool)
         try:
             yield redis
         finally:
             await redis.aclose()
+            await pool.disconnect()
             self.logger.debug("Клиент Redis закрыт")
 
     @provide(scope=Scope.APP)
