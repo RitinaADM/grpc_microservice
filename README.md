@@ -8,36 +8,53 @@ from src.infra.adapters.inbound.grpc.py_proto import service_pb2 as service__pb2
 
 Микросервис `grpc_microservice` построен на принципах **чистой архитектуры** (Clean Architecture) с использованием паттерна **порты и адаптеры** (Ports and Adapters). Это обеспечивает модульность, тестируемость и независимость бизнес-логики от внешних систем.
 
-## Слои архитектуры
+Микросервис для управления документами с поддержкой MongoDB/PostgreSQL, кэширования в Redis и gRPC API. Построен на принципах **чистой архитектуры** и паттерна **порты и адаптеры**, что обеспечивает модульность, тестируемость и независимость бизнес-логики от внешних систем.
 
-Проект разделён на три основных слоя:
+## Возможности
+- **CRUD операции**: Создание, получение, обновление и мягкое удаление документов.
+- **Управление версиями**: Хранение и получение истории изменений документов.
+- **Пагинация**: Получение списка документов с параметрами `skip` и `limit`.
+- **Кэширование**: Использование Redis для кэширования документов, списков и версий.
+- **Гибкое хранилище**: Поддержка MongoDB (`beanie`) и PostgreSQL (`SQLAlchemy`).
+- **Обработка ошибок**: Специфичные исключения и gRPC-статусы (`NOT_FOUND`, `INVALID_ARGUMENT`, `INTERNAL`).
+- **Повтор попыток**: Использование `tenacity` для обработки сбоев MongoDB и Redis.
+- **Внедрение зависимостей**: Использование `dishka` для DI.
+
+## Технологический стек
+- **Язык**: Python 3.12 (асинхронный, `asyncio`).
+- **API**: gRPC (`service.proto`).
+- **Базы данных**:
+  - MongoDB (`beanie`, `motor`).
+  - PostgreSQL (`SQLAlchemy`, `asyncpg`).
+- **Кэширование**: Redis (`redis-py`).
+- **Валидация**: `pydantic` для DTO и настроек.
+- **DI**: `dishka`.
+- **Логирование**: Стандартная библиотека `logging`.
+- **Тестирование**: `pytest`, `pytest-asyncio`.
+- **Контейнеризация**: Docker, Docker Compose.
+
+## Архитектура проекта
+
+Проект разделён на три слоя согласно чистой архитектуре:
 
 1. **Доменный слой** (`src/domain`):
-   - Содержит бизнес-логику и модели данных:
-     - `Document`: Модель документа с полями `id`, `title`, `content`, `created_at`, `updated_at`, `is_deleted`.
-     - DTO (Data Transfer Objects): `DocumentCreateDTO`, `DocumentUpdateDTO`, `DocumentListDTO`, `DocumentIdDTO` для валидации входных данных.
-   - Определяет интерфейсы (порты):
-     - `DocumentServicePort`: Интерфейс для бизнес-логики.
-     - `DocumentRepositoryPort`: Интерфейс для взаимодействия с хранилищем данных.
-   - Независим от внешних технологий и не содержит кода, связанного с базами данных или gRPC.
+   - Модели: `Document`, `DocumentVersion`, `DocumentStatus`.
+   - DTO: `DocumentCreateDTO`, `DocumentUpdateDTO`, `DocumentListDTO`, `DocumentIdDTO`.
+   - Порты: `DocumentServicePort`, `DocumentRepositoryPort`.
+   - Исключения: `DocumentNotFoundException`, `InvalidInputException`.
 
 2. **Прикладной слой** (`src/application`):
-   - Реализует бизнес-логику через класс `DocumentService`.
-   - Координирует взаимодействие между доменным слоем и инфраструктурой.
-   - Обрабатывает операции CRUD, восстановление документов и пагинацию, используя кэширование через Redis.
+   - `DocumentService`: Реализация бизнес-логики CRUD, версионирования и пагинации.
+   - Координирует взаимодействие с репозиториями и кэшем.
 
 3. **Инфраструктурный слой** (`src/infra`):
-   - **Входные адаптеры** (`src/infra/adapters/inbound`):
-     - gRPC-сервис (`DocumentServiceServicer`), обрабатывающий запросы клиентов.
-   - **Выходные адаптеры** (`src/infra/adapters/outbound`):
-     - `MongoDocumentAdapter`: Реализация для MongoDB с использованием `beanie`.
-     - `SQLDocumentAdapter`: Реализация для PostgreSQL с использованием `SQLAlchemy`.
-     - `RedisCacheAdapter`: Кэширование данных в Redis.
-   - **Конфигурация** (`src/infra/config`):
-     - `settings.py`: Загрузка конфигурации из `.env`.
-     - `logging.py`: Настройка логирования.
-   - **DI** (`src/infra/di`):
-     - Используется библиотека `dishka` для внедрения зависимостей.
+   - **Входные адаптеры** (`inbound`): gRPC-сервис (`DocumentServiceServicer`).
+   - **Выходные адаптеры** (`outbound`):
+     - `MongoDocumentAdapter`, `SQLDocumentAdapter` для работы с БД.
+     - `RedisCacheAdapter` для кэширования.
+   - **Мапперы**: `GrpcMapper`, `MongoMapper`, `SQLMapper`, `RedisMapper`, `MapperUtils`, `VersionMapper`.
+   - **Конфигурация**: `settings.py` (`.env`), `logging.py`.
+   - **DI**: `provider.py` для настройки зависимостей.
 
 ## Технологический стек
 - **Язык программирования**: Python 3.12 с асинхронной моделью (`asyncio`).
