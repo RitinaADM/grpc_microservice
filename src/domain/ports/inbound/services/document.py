@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from src.domain.models.document import Document
+from src.domain.models.document import Document, DocumentVersion
 from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
 from typing import List
+from uuid import UUID
 
 class DocumentServicePort(ABC):
     """Inbound порт для взаимодействия внешнего мира с приложением."""
@@ -28,4 +29,14 @@ class DocumentServicePort(ABC):
     @abstractmethod
     async def restore(self, id_dto: DocumentIdDTO) -> Document:
         """Восстановление документа по ID."""
+        pass
+
+    @abstractmethod
+    async def get_versions(self, id_dto: DocumentIdDTO) -> List[DocumentVersion]:
+        """Получение списка версий документа."""
+        pass
+
+    @abstractmethod
+    async def get_version(self, id_dto: DocumentIdDTO, version_id: UUID) -> DocumentVersion:
+        """Получение конкретной версии документа."""
         pass

@@ -1,23 +1,31 @@
 syntax = "proto3";
 
+package document;
+
 enum DocumentStatus {
     DRAFT = 0;
     PUBLISHED = 1;
     ARCHIVED = 2;
 }
 
-message DocumentMetadata {
-    string author = 1;
-    repeated string tags = 2;
-    string category = 3;
+message Document {
+    string id = 1;
+    string title = 2;
+    string content = 3;
+    DocumentStatus status = 4;
+    string author = 5;
+    repeated string tags = 6;
+    string category = 7;
+    repeated string comments = 8;
+    string created_at = 9;
+    string updated_at = 10;
+    bool is_deleted = 11;
 }
 
 message DocumentVersion {
     string version_id = 1;
-    string content = 2;
-    DocumentMetadata metadata = 3;
-    repeated string comments = 4;
-    string timestamp = 5;
+    Document document = 2;
+    string timestamp = 3;
 }
 
 message GetDocumentRequest {
@@ -28,8 +36,10 @@ message CreateDocumentRequest {
     string title = 1;
     string content = 2;
     DocumentStatus status = 3;
-    DocumentMetadata metadata = 4;
-    repeated string comments = 5;
+    string author = 4;
+    repeated string tags = 5;
+    string category = 6;
+    repeated string comments = 7;
 }
 
 message UpdateDocumentRequest {
@@ -37,8 +47,10 @@ message UpdateDocumentRequest {
     string title = 2;
     string content = 3;
     DocumentStatus status = 4;
-    DocumentMetadata metadata = 5;
-    repeated string comments = 6;
+    string author = 5;
+    repeated string tags = 6;
+    string category = 7;
+    repeated string comments = 8;
 }
 
 message DeleteDocumentRequest {
@@ -48,18 +60,6 @@ message DeleteDocumentRequest {
 message ListDocumentsRequest {
     int32 skip = 1;
     int32 limit = 2;
-}
-
-message Document {
-    string id = 1;
-    string title = 2;
-    string content = 3;
-    DocumentStatus status = 4;
-    DocumentMetadata metadata = 5;
-    repeated string comments = 6;
-    string created_at = 8;
-    string updated_at = 9;
-    bool is_deleted = 10;
 }
 
 message DeleteDocumentResponse {
@@ -75,16 +75,16 @@ message RestoreDocumentRequest {
 }
 
 message GetDocumentVersionsRequest {
-    string id = 1;  // ID документа
+    string id = 1;
 }
 
 message GetDocumentVersionsResponse {
-    repeated DocumentVersion versions = 1;  // Список версий
+    repeated DocumentVersion versions = 1;
 }
 
 message GetDocumentVersionRequest {
-    string id = 1;        // ID документа
-    string version_id = 2; // ID версии
+    string id = 1;
+    string version_id = 2;
 }
 
 message GetDocumentResponse {

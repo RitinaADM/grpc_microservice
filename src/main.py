@@ -19,12 +19,13 @@ async def init_db():
             await init_beanie(database=client[settings.DB_NAME], document_models=[MongoDocument])
             logger.info("MongoDB successfully initialized")
         elif settings.DB_TYPE == DatabaseType.POSTGRES:
-            logger.debug("Creating PostgreSQL engine")
+            logger.debug("Creating PostgreSQL async engine")
             engine = create_async_engine(settings.DB_URL, echo=True)
+            logger.debug(f"Async engine created: {engine}")
             async with engine.begin() as conn:
                 logger.debug("Creating tables")
                 await conn.run_sync(Base.metadata.create_all)  # Только создание таблиц
-            await engine.dispose()
+            # Не закрываем engine здесь, так как он используется в DI
             logger.info("PostgreSQL successfully initialized")
         else:
             logger.error("Unsupported database type")

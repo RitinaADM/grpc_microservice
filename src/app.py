@@ -16,7 +16,7 @@ async def serve():
 
     container = make_async_container(AppProvider())
     try:
-        logger.debug("Получение DocumentServiceServicer из DI-контейнера")
+        logger.debug(f"Получение DocumentServiceServicer из DI-контейнера, event loop: {asyncio.get_running_loop()}")
         # Создаем временный контекст запроса для получения сервисера
         async with container() as request_container:
             servicer = await request_container.get(DocumentServiceServicer)

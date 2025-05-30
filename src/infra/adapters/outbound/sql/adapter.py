@@ -1,283 +1,193 @@
+import logging
 from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.orm import selectinload
 from src.domain.models.document import Document, DocumentVersion
-from src.infra.adapters.outbound.sql.models import SQLDocument, SQLDocumentVersion
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
 from src.domain.dtos.document import DocumentUpdateDTO
-import logging
-from logging import Logger
+from src.infra.adapters.outbound.sql.models import SQLDocument, SQLDocumentVersion
 from src.infra.adapters.outbound.sql.mapper import SQLMapper
+from src.domain.exceptions.base import BaseAppException
+
 
 class SQLDocumentAdapter(DocumentRepositoryPort):
-    def __init__(self, session: AsyncSession):
-        self.session: AsyncSession = session
-        self.logger: Logger = logging.getLogger(__name__)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self.session_factory = session_factory
+        self.logger = logging.getLogger(__name__)
         self.mapper = SQLMapper()
 
+    def _convert_uuid_to_str(self, obj):
+        """Recursively convert UUID objects to strings for JSON serialization."""
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {k: self._convert_uuid_to_str(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._convert_uuid_to_str(item) for item in obj]
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return obj
+
     async def get_by_id(self, id: UUID) -> Optional[Document]:
-        """
-        Получает документ из PostgreSQL по его UUID.
-
-        Args:
-            id: UUID документа.
-
-        Returns:
-            Document: Доменная модель документа, если найден.
-            None: Если документ не найден или помечен как удаленный.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Получение документа с id={id}")
+        self.logger.debug(f"Getting document from PostgreSQL with ID: {id}")
         try:
-            async with self.session.begin():
-                result = await self.session.execute(
-                    select(SQLDocument)
-                    .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-                )
-                sql_doc = result.scalars().first()
-                if sql_doc:
-                    self.logger.debug(f"Документ с id={id} найден")
-                    return self.mapper.to_domain_document(sql_doc)
-                self.logger.warning(f"Документ с id={id} не найден или удален")
-                return None
-        except SQLAlchemyError as e:
-            self.logger.error(f"Ошибка при получении документа: {str(e)}")
-            raise
-
-    async def create(self, document: Document) -> Document:
-        """
-        Создает новый документ в PostgreSQL.
-
-        Args:
-            document: Доменная модель документа.
-
-        Returns:
-            Document: Созданная доменная модель документа.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Создание документа в PostgreSQL: {document.id}")
-        async with self.session.begin():
-            try:
-                sql_doc = self.mapper.to_sql_document(document)
-                self.session.add(sql_doc)
-                await self.session.flush()
-                for version in document.versions:
-                    sql_version = self.mapper.to_sql_version(version, document.id)
-                    self.session.add(sql_version)
-                await self.session.flush()
-                result = await self.session.execute(
-                    select(SQLDocument)
-                    .where(SQLDocument.id == document.id)
-                )
-                sql_doc = result.scalars().first()
-                self.logger.debug(f"Документ с ID {document.id} успешно создан")
-                return self.mapper.to_domain_document(sql_doc)
-            except SQLAlchemyError as e:
-                self.logger.error(f"Ошибка при создании документа с ID {document.id}: {str(e)}")
-                raise
-
-    async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
-        """
-        Обновляет документ в PostgreSQL по его UUID.
-
-        Args:
-            id: UUID документа.
-            data: DTO с данными для обновления.
-
-        Returns:
-            Document: Обновленная доменная модель документа, если найден.
-            None: Если документ не найден или помечен как удаленный.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Обновление документа в PostgreSQL с ID: {id}")
-        async with self.session.begin():
-            try:
-                result = await self.session.execute(
-                    select(SQLDocument)
-                    .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-                )
-                sql_doc = result.scalars().first()
-                if not sql_doc:
-                    self.logger.warning(f"Документ с ID: {id} не найден или помечен как удаленный")
-                    return None
-
-                sql_version = SQLDocumentVersion(
-                    version_id=uuid4(),
-                    document_id=id,
-                    content=sql_doc.content,
-                    document_metadata=sql_doc.document_metadata,
-                    comments=sql_doc.comments,
-                    timestamp=datetime.utcnow()
-                )
-                self.session.add(sql_version)
-                await self.session.flush()
-                self.logger.debug(f"Сохранена версия документа с ID: {id}, version_id: {sql_version.version_id}")
-
-                update_data = {"updated_at": datetime.utcnow()}
-                if data.title is not None:
-                    update_data['title'] = data.title
-                if data.content is not None:
-                    update_data['content'] = data.content
-                if data.status is not None:
-                    update_data['status'] = data.status
-                if data.metadata is not None:
-                    update_data['document_metadata'] = data.metadata.dict()
-                if data.comments is not None:
-                    update_data['comments'] = data.comments
-
-                result = await self.session.execute(
-                    update(SQLDocument)
-                    .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-                    .values(**update_data)
-                    .returning(SQLDocument)
-                )
-                sql_doc = result.scalars().first()
-                self.logger.debug(f"Документ с ID: {id} успешно обновлен")
-                return self.mapper.to_domain_document(sql_doc)
-            except SQLAlchemyError as e:
-                self.logger.error(f"Ошибка при обновлении документа с ID {id}: {str(e)}")
-                await self.session.rollback()
-                raise
-
-    async def delete(self, id: UUID) -> bool:
-        """
-        Выполняет мягкое удаление документа в PostgreSQL.
-
-        Args:
-            id: UUID документа.
-
-        Returns:
-            bool: True, если документ успешно помечен как удаленный, иначе False.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Начало мягкого удаления для документа с ID: {id}")
-        async with self.session.begin():
-            try:
-                result = await self.session.execute(
-                    select(SQLDocument)
-                    .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
-                )
-                sql_doc = result.scalars().first()
-                if not sql_doc:
-                    self.logger.info(f"Документ с ID: {id} уже удален или не существует")
-                    return False
-                result = await self.session.execute(
-                    update(SQLDocument)
-                    .where(SQLDocument.id == id)
-                    .values(is_deleted=True, updated_at=datetime.utcnow())
-                )
-                self.logger.debug(f"Документ с ID: {id} успешно помечен как удаленный")
-                return True
-            except SQLAlchemyError as e:
-                self.logger.error(f"Ошибка при удалении документа с ID {id}: {str(e)}")
-                await self.session.rollback()
-                raise
-
-    async def list_documents(self, skip: int, limit: int) -> List[Document]:
-        """
-        Получает список документов из PostgreSQL с пагинацией.
-
-        Args:
-            skip: Количество документов для пропуска.
-            limit: Максимальное количество документов для возврата.
-
-        Returns:
-            List[Document]: Список доменных моделей документов.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Получение списка документов из PostgreSQL с skip={skip}, limit={limit}")
-        try:
-            async with self.session.begin():
-                result = await self.session.execute(
-                    select(SQLDocument)
-                    .options(joinedload(SQLDocument.versions))
-                    .where(SQLDocument.is_deleted == False)
-                    .order_by(SQLDocument.updated_at.desc())
-                    .offset(skip)
-                    .limit(limit)
-                )
-                sql_docs = result.unique().scalars().all()
-                self.logger.debug(f"Получено {len(sql_docs)} документов: {[doc.id for doc in sql_docs]}")
-                return [self.mapper.to_domain_document(doc) for doc in sql_docs]
-        except SQLAlchemyError as e:
-            self.logger.error(f"Ошибка при получении списка документов: {str(e)}")
-            raise
-
-    async def restore(self, id: UUID) -> Optional[Document]:
-        """
-        Восстанавливает удаленный документ в PostgreSQL.
-
-        Args:
-            id: UUID документа.
-
-        Returns:
-            Document: Восстановленная доменная модель документа, если найдена.
-            None: Если документ не найден.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Начало восстановления для документа с ID: {id}")
-        async with self.session.begin():
-            try:
-                result = await self.session.execute(
-                    update(SQLDocument)
-                    .where(SQLDocument.id == id, SQLDocument.is_deleted == True)
-                    .values(is_deleted=False, updated_at=datetime.utcnow())
-                    .returning(SQLDocument)
-                )
-                sql_doc = result.scalars().first()
-                if sql_doc:
-                    result = await self.session.execute(
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
                         select(SQLDocument)
-                        .where(SQLDocument.id == id)
+                        .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
+                        .options(selectinload(SQLDocument.versions))
                     )
                     sql_doc = result.scalars().first()
-                self.logger.debug(f"Результат восстановления: {'успех' if sql_doc else 'не найдено'} для документа с ID: {id}")
-                return self.mapper.to_domain_document(sql_doc) if sql_doc else None
-            except SQLAlchemyError as e:
-                self.logger.error(f"Ошибка при восстановлении документа с ID {id}: {str(e)}")
-                await self.session.rollback()
-                raise
+                    return self.mapper.to_domain_document(sql_doc) if sql_doc else None
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while fetching document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to fetch document due to database error: {str(e)}")
+
+    async def create(self, document: Document) -> Document:
+        self.logger.debug(f"Creating document in PostgreSQL: {document.id}")
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    sql_doc = self.mapper.to_sql_document(document)
+                    session.add(sql_doc)
+                    await session.flush()
+                    return document
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while creating document {document.id}: {str(e)}")
+            raise BaseAppException(f"Failed to create document due to database error: {str(e)}")
+
+    async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
+        self.logger.debug(f"Updating document in PostgreSQL with ID: {id}")
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(SQLDocument)
+                        .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
+                        .options(selectinload(SQLDocument.versions))
+                    )
+                    sql_doc = result.scalars().first()
+                    if not sql_doc:
+                        self.logger.warning(f"Document with ID: {id} not found or deleted")
+                        return None
+
+                    # Create version with JSON-serializable data
+                    document_dict = self.mapper.to_domain_document(sql_doc).dict()
+                    serializable_document_dict = self._convert_uuid_to_str(document_dict)
+
+                    current_version = SQLDocumentVersion(
+                        version_id=uuid4(),
+                        document_id=sql_doc.id,
+                        document_data=serializable_document_dict,
+                        timestamp=datetime.utcnow()
+                    )
+                    self.logger.debug(f"Creating version {current_version.version_id} for document {id}")
+                    sql_doc.versions.append(current_version)
+
+                    # Update document fields
+                    if data.title is not None:
+                        sql_doc.title = data.title
+                    if data.content is not None:
+                        sql_doc.content = data.content
+                    if data.status is not None:
+                        sql_doc.status = data.status
+                    if data.author is not None:
+                        sql_doc.author = data.author
+                    if data.tags is not None:
+                        sql_doc.tags = data.tags
+                    if data.category is not None:
+                        sql_doc.category = data.category
+                    if data.comments is not None:
+                        sql_doc.comments = data.comments
+                    sql_doc.updated_at = datetime.utcnow()
+                    await session.flush()
+                    return self.mapper.to_domain_document(sql_doc)
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while updating document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to update document due to database error: {str(e)}")
+        except TypeError as e:
+            self.logger.error(f"JSON serialization error while updating document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to serialize document data: {str(e)}")
+
+    async def delete(self, id: UUID) -> bool:
+        self.logger.debug(f"Soft deleting document from PostgreSQL with ID: {id}")
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(SQLDocument)
+                        .where(SQLDocument.id == id, SQLDocument.is_deleted == False)
+                        .options(selectinload(SQLDocument.versions))
+                    )
+                    sql_doc = result.scalars().first()
+                    if not sql_doc:
+                        self.logger.warning(f"Document with ID: {id} not found")
+                        return False
+                    sql_doc.is_deleted = True
+                    sql_doc.updated_at = datetime.utcnow()
+                    await session.flush()
+                    return True
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while deleting document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to delete document due to database error: {str(e)}")
+
+    async def list_documents(self, skip: int, limit: int) -> List[Document]:
+        self.logger.debug(f"Listing documents from PostgreSQL with skip: {skip}, limit: {limit}")
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(SQLDocument)
+                        .where(SQLDocument.is_deleted == False)
+                        .offset(skip)
+                        .limit(limit)
+                        .options(selectinload(SQLDocument.versions))
+                    )
+                    sql_docs = result.scalars().all()
+                    return [self.mapper.to_domain_document(doc) for doc in sql_docs]
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while listing documents: {str(e)}")
+            raise BaseAppException(f"Failed to list documents due to database error: {str(e)}")
+
+    async def restore(self, id: UUID) -> Optional[Document]:
+        self.logger.debug(f"Restoring document in PostgreSQL with ID: {id}")
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(SQLDocument)
+                        .where(SQLDocument.id == id, SQLDocument.is_deleted == True)
+                        .options(selectinload(SQLDocument.versions))
+                    )
+                    sql_doc = result.scalars().first()
+                    if not sql_doc:
+                        self.logger.warning(f"Document with ID: {id} not found or not deleted")
+                        return None
+                    sql_doc.is_deleted = False
+                    sql_doc.updated_at = datetime.utcnow()
+                    await session.flush()
+                    return self.mapper.to_domain_document(sql_doc)
+        except SQLAlchemyError as e:
+            self.logger.error(f"PostgreSQL error while restoring document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to restore document due to database error: {str(e)}")
 
     async def get_versions(self, id: UUID) -> List[DocumentVersion]:
-        """
-        Получает список версий документа из PostgreSQL.
-
-        Args:
-            id: UUID документа.
-
-        Returns:
-            List[DocumentVersion]: Список доменных моделей версий документа.
-
-        Raises:
-            SQLAlchemyError: Если произошла ошибка базы данных.
-        """
-        self.logger.debug(f"Получение версий для документа с id={id}")
+        self.logger.debug(f"Getting versions for document from PostgreSQL with ID: {id}")
         try:
-            async with self.session.begin():
-                result = await self.session.execute(
-                    select(SQLDocumentVersion)
-                    .where(SQLDocumentVersion.document_id == id)
-                    .order_by(SQLDocumentVersion.timestamp.desc())
-                )
-                sql_versions = result.scalars().all()
-                self.logger.debug(f"Получено {len(sql_versions)} версий для документа с id={id}")
-                return [self.mapper.to_domain_version(v) for v in sql_versions]
+            async with self.session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(SQLDocument)
+                        .where(SQLDocument.id == id)
+                        .options(selectinload(SQLDocument.versions))
+                    )
+                    sql_doc = result.scalars().first()
+                    return [self.mapper.to_domain_version(v) for v in sql_doc.versions] if sql_doc else []
         except SQLAlchemyError as e:
-            self.logger.error(f"Ошибка при получении версий документа с id={id}: {str(e)}")
-            raise
+            self.logger.error(f"PostgreSQL error while fetching versions for document {id}: {str(e)}")
+            raise BaseAppException(f"Failed to fetch versions due to database error: {str(e)}")

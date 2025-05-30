@@ -1,14 +1,14 @@
+from typing import List
+from uuid import UUID
+from datetime import datetime
 from src.domain.models.document import Document, DocumentVersion
 from src.domain.ports.inbound.services.document import DocumentServicePort
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
 from src.domain.exceptions.document import DocumentNotFoundException
 from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
-from typing import List
-import logging
-from pymongo.errors import ConnectionFailure, OperationFailure
-from src.domain.exceptions.base import BaseAppException
 from src.infra.adapters.outbound.redis.adapter import RedisCacheAdapter
-from uuid import UUID
+from src.domain.exceptions.base import BaseAppException
+import logging
 
 class DocumentService(DocumentServicePort):
     def __init__(self, repository: DocumentRepositoryPort, cache: RedisCacheAdapter):
@@ -18,39 +18,41 @@ class DocumentService(DocumentServicePort):
 
     async def get_by_id(self, id_dto: DocumentIdDTO) -> Document:
         self.logger.info(f"Fetching document with ID: {id_dto.id}")
+        cached_document = await self.cache.get_document(str(id_dto.id))
+        if cached_document:
+            self.logger.debug(f"Cache hit for document: {id_dto.id}")
+            return cached_document
         try:
-            cached_document = await self.cache.get_document(str(id_dto.id))
-            if cached_document:
-                self.logger.debug(f"Returning cached document: {id_dto.id}")
-                return cached_document
             document = await self.repository.get_by_id(id_dto.id)
             if not document:
                 self.logger.warning(f"Document not found: {id_dto.id}")
                 raise DocumentNotFoundException()
             await self.cache.set_document(document)
-            self.logger.debug(f"Successfully fetched and cached document: {id_dto.id}")
             return document
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error fetching document: {str(e)}")
+            raise
 
     async def create(self, data: DocumentCreateDTO) -> Document:
-        self.logger.info(f"Creating document with title: {data.title}")
+        self.logger.info(f"Creating new document with title: {data.title}")
         try:
-            document = Document(**data.model_dump())
+            document = Document(**data.dict())
             created_document = await self.repository.create(document)
             await self.cache.set_document(created_document)
             await self.cache.set_document_versions(str(created_document.id), created_document.versions)
             await self.cache.invalidate_document_list()
-            self.logger.debug(f"Successfully created and cached document: {created_document.id}")
             return created_document
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error creating document: {str(e)}")
+            raise
 
     async def update(self, id_dto: DocumentIdDTO, data: DocumentUpdateDTO) -> Document:
-        self.logger.info(f"Updating document with ID: {id_dto.id}, data: {data.model_dump(exclude_none=True)}")
+        self.logger.debug(f"Updating document with ID: {id_dto.id}")
         try:
+            document = await self.repository.get_by_id(id_dto.id)
+            if not document:
+                self.logger.warning(f"Document not found: {id_dto.id}")
+                raise DocumentNotFoundException()
             updated_document = await self.repository.update(id_dto.id, data)
             if not updated_document:
                 self.logger.warning(f"Document not found: {id_dto.id}")
@@ -58,11 +60,10 @@ class DocumentService(DocumentServicePort):
             await self.cache.set_document(updated_document)
             await self.cache.set_document_versions(str(id_dto.id), updated_document.versions)
             await self.cache.invalidate_document_list()
-            self.logger.debug(f"Successfully updated and cached document: {id_dto.id}")
             return updated_document
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error updating document: {str(e)}")
+            raise
 
     async def delete(self, id_dto: DocumentIdDTO) -> bool:
         self.logger.info(f"Soft deleting document with ID: {id_dto.id}")
@@ -71,59 +72,49 @@ class DocumentService(DocumentServicePort):
             if not success:
                 self.logger.warning(f"Document not found: {id_dto.id}")
                 raise DocumentNotFoundException()
-            # Инвалидируем кэш документа и списков
             await self.cache.invalidate_document(str(id_dto.id))
             await self.cache.invalidate_document_versions(str(id_dto.id))
             await self.cache.invalidate_document_list()
-            self.logger.debug(f"Successfully soft deleted document: {id_dto.id}")
             return success
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error deleting document: {str(e)}")
+            raise
 
     async def list_documents(self, params: DocumentListDTO) -> List[Document]:
-        self.logger.info(f"Listing documents with skip: {params.skip}, limit: {params.limit}")
+        self.logger.debug(f"Listing documents with skip: {params.skip}, limit: {params.limit}")
         try:
-            # Проверяем кэш
             cached_documents = await self.cache.get_document_list(params.skip, params.limit)
             if cached_documents:
-                self.logger.debug(f"Returning cached document list: skip={params.skip}, limit={params.limit}")
+                self.logger.debug(f"Cache hit for document list skip={params.skip}, limit={params.limit}")
                 return cached_documents
-
-            # Если нет в кэше, запрашиваем из базы
             documents = await self.repository.list_documents(params.skip, params.limit)
-            # Сохраняем в кэш
             await self.cache.set_document_list(documents, params.skip, params.limit)
-            self.logger.debug(f"Successfully fetched and cached {len(documents)} documents")
             return documents
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error listing documents: {str(e)}")
+            raise
 
     async def restore(self, id_dto: DocumentIdDTO) -> Document:
-        self.logger.info(f"Restoring document with ID: {id_dto.id}")
+        self.logger.debug(f"Restoring document with ID: {id_dto.id}")
         try:
             document = await self.repository.restore(id_dto.id)
             if not document:
                 self.logger.warning(f"Document not found: {id_dto.id}")
                 raise DocumentNotFoundException()
-            # Обновляем кэш
             await self.cache.set_document(document)
             await self.cache.set_document_versions(str(id_dto.id), document.versions)
-            # Инвалидируем кэш списков
             await self.cache.invalidate_document_list()
-            self.logger.debug(f"Successfully restored and cached document: {id_dto.id}")
             return document
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error restoring document: {str(e)}")
+            raise
 
     async def get_versions(self, id_dto: DocumentIdDTO) -> List[DocumentVersion]:
-        self.logger.info(f"Fetching versions for document with ID: {id_dto.id}")
+        self.logger.debug(f"Fetching versions for document with ID: {id_dto.id}")
         try:
             cached_versions = await self.cache.get_document_versions(str(id_dto.id))
             if cached_versions:
-                self.logger.debug(f"Returning cached versions for document: {id_dto.id}")
+                self.logger.debug(f"Cache hit for versions: {id_dto.id}")
                 return cached_versions
             document = await self.repository.get_by_id(id_dto.id)
             if not document:
@@ -131,22 +122,19 @@ class DocumentService(DocumentServicePort):
                 raise DocumentNotFoundException()
             await self.cache.set_document_versions(str(id_dto.id), document.versions)
             return document.versions
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error fetching versions: {str(e)}")
+            raise
 
     async def get_version(self, id_dto: DocumentIdDTO, version_id: UUID) -> DocumentVersion:
-        self.logger.info(f"Fetching version {version_id} for document with ID: {id_dto.id}")
+        self.logger.debug(f"Fetching version {version_id} for document {id_dto.id}")
         try:
-            document = await self.repository.get_by_id(id_dto.id)
-            if not document:
-                self.logger.warning(f"Document not found: {id_dto.id}")
-                raise DocumentNotFoundException()
-            for version in document.versions:
+            versions = await self.get_versions(id_dto)
+            for version in versions:
                 if version.version_id == version_id:
                     return version
             self.logger.warning(f"Version {version_id} not found for document: {id_dto.id}")
             raise DocumentNotFoundException("Version not found")
-        except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"Database error: {str(e)}")
-            raise BaseAppException(f"Database error: {str(e)}")
+        except BaseAppException as e:
+            self.logger.error(f"Error fetching version: {str(e)}")
+            raise

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, UUID4
 from uuid import UUID, uuid4
 from datetime import datetime
 from enum import Enum
@@ -9,31 +9,31 @@ class DocumentStatus(str, Enum):
     PUBLISHED = "published"
     ARCHIVED = "archived"
 
-class DocumentMetadata(BaseModel):
-    author: str = Field(..., min_length=1, max_length=100)
-    tags: List[str] = Field(default_factory=list)
-    category: Optional[str] = None
-
-class DocumentVersion(BaseModel):
-    version_id: UUID = Field(default_factory=uuid4)
-    content: str
-    metadata: DocumentMetadata
-    comments: List[str] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
 class Document(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     title: str
     content: str
     status: DocumentStatus = DocumentStatus.DRAFT
-    metadata: DocumentMetadata
+    author: str = Field(..., min_length=1, max_length=100)
+    tags: List[str] = Field(default_factory=list)
+    category: Optional[str] = None
     comments: List[str] = Field(default_factory=list)
-    versions: List[DocumentVersion] = Field(default_factory=list)  # Новое поле для версий
+    versions: List['DocumentVersion'] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_deleted: bool = False
 
-    def add_version(self, content: str, metadata: DocumentMetadata, comments: List[str]):
-        """Добавляет новую версию документа."""
-        version = DocumentVersion(content=content, metadata=metadata, comments=comments)
-        self.versions.append(version)
+    class Config:
+        json_encoders = {
+            UUID4: str  # Convert UUID to string during JSON serialization
+        }
+
+class DocumentVersion(BaseModel):
+    version_id: UUID = Field(default_factory=uuid4)
+    document: Document
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        json_encoders = {
+            UUID4: str  # Convert UUID to string during JSON serialization
+        }
