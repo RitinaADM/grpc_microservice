@@ -1,65 +1,34 @@
 import json
-from typing import List, Optional, Any
-from uuid import UUID
-from datetime import datetime
-from src.domain.models.document import Document, DocumentVersion, DocumentStatus
+from typing import List, Optional
+from src.domain.models.document import Document, DocumentVersion
 from src.domain.ports.outbound.mappers.base import BaseMapper
+from src.infra.adapters.outbound.mappers.utils import MapperUtils, VersionMapper
 
 class RedisMapper(BaseMapper[Document]):
     """Маппер для сериализации/десериализации данных в Redis."""
 
-    def _convert_to_json_serializable(self, obj: Any) -> Any:
-        """Рекурсивно преобразует UUID и datetime в JSON-сериализуемые типы."""
-        if isinstance(obj, UUID):
-            return self._serialize_uuid(obj)
-        if isinstance(obj, datetime):
-            return self._serialize_datetime(obj)
-        if isinstance(obj, DocumentStatus):
-            return self._serialize_status(obj)
-        if isinstance(obj, dict):
-            return {k: self._convert_to_json_serializable(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [self._convert_to_json_serializable(item) for item in obj]
-        return obj
-
     def to_storage(self, obj: Document) -> str:
         """Сериализует Document в JSON-строку для Redis."""
-        doc_dict = obj.dict()
-        doc_dict = self._convert_to_json_serializable(doc_dict)
+        doc_dict = MapperUtils.to_json_serializable(obj)
         return json.dumps(doc_dict)
 
     def from_storage(self, data: str) -> Document:
         """Десериализует JSON-строку из Redis в Document."""
         doc_dict = json.loads(data)
-        doc_dict['id'] = self._deserialize_uuid(doc_dict['id'])
-        doc_dict['created_at'] = self._deserialize_datetime(doc_dict['created_at'])
-        doc_dict['updated_at'] = self._deserialize_datetime(doc_dict['updated_at'])
-        doc_dict['status'] = self._deserialize_status(doc_dict['status'])
-        for version in doc_dict['versions']:
-            version['version_id'] = self._deserialize_uuid(version['version_id'])
-            version['timestamp'] = self._deserialize_datetime(version['timestamp'])
-            version['document']['id'] = self._deserialize_uuid(version['document']['id'])
-            version['document']['created_at'] = self._deserialize_datetime(version['document']['created_at'])
-            version['document']['updated_at'] = self._deserialize_datetime(version['document']['updated_at'])
-            version['document']['status'] = self._deserialize_status(version['document']['status'])
+        doc_dict['id'] = MapperUtils.deserialize_uuid(doc_dict['id'])
+        doc_dict['created_at'] = MapperUtils.deserialize_datetime(doc_dict['created_at'])
+        doc_dict['updated_at'] = MapperUtils.deserialize_datetime(doc_dict['updated_at'])
+        doc_dict['status'] = MapperUtils.deserialize_status(doc_dict['status'])
+        doc_dict['tags'] = doc_dict.get('tags', [])
+        doc_dict['comments'] = doc_dict.get('comments', [])
+        doc_dict['versions'] = [VersionMapper.to_domain_version(v, "redis") for v in doc_dict.get('versions', [])]
         return Document(**doc_dict)
 
     def to_storage_versions(self, versions: List[DocumentVersion]) -> str:
         """Сериализует список DocumentVersion в JSON-строку для Redis."""
-        versions_data = [version.dict() for version in versions]
-        versions_data = self._convert_to_json_serializable(versions_data)
-        return json.dumps(versions_data)
+        return json.dumps(VersionMapper.to_storage_versions(versions, "redis"))
 
     def from_storage_versions(self, data: str) -> List[DocumentVersion]:
         """Десериализует JSON-строку из Redis в список DocumentVersion."""
         versions_data = json.loads(data)
-        versions = []
-        for v_data in versions_data:
-            v_data['version_id'] = self._deserialize_uuid(v_data['version_id'])
-            v_data['timestamp'] = self._deserialize_datetime(v_data['timestamp'])
-            v_data['document']['id'] = self._deserialize_uuid(v_data['document']['id'])
-            v_data['document']['created_at'] = self._deserialize_datetime(v_data['document']['created_at'])
-            v_data['document']['updated_at'] = self._deserialize_datetime(v_data['document']['updated_at'])
-            v_data['document']['status'] = self._deserialize_status(v_data['document']['status'])
-            versions.append(DocumentVersion(**v_data))
-        return versions
+        return [VersionMapper.to_domain_version(v, "redis") for v in versions_data]
