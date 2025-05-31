@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy.orm import selectinload
 from src.domain.models.document import Document, DocumentVersion
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
-from src.domain.dtos.document import DocumentUpdateDTO
+from src.application.document.dto import DocumentUpdateDTO
 from src.infra.adapters.outbound.sql.models import SQLDocument, SQLDocumentVersion
 from src.infra.adapters.outbound.sql.mapper import SQLMapper
 from src.domain.exceptions.base import BaseAppException
@@ -35,7 +35,7 @@ class SQLDocumentAdapter(DocumentRepositoryPort):
             self.logger.error(f"PostgreSQL error while fetching document {id}: {str(e)}")
             raise BaseAppException(f"Failed to fetch document due to database error: {str(e)}")
 
-    async def create(self, document: Document) -> Document:
+    async def save(self, document: Document) -> Document:
         self.logger.info(f"Creating document in PostgreSQL: {document.id}")
         try:
             async with self.session_factory() as session:
