@@ -18,7 +18,7 @@ class MapperUtils:
             return value
         if isinstance(value, str):
             return UUID(value)
-        raise ValueError(f"Invalid UUID value: {value}")
+        raise ValueError(f"Неверное значение UUID: {value}")
 
     @staticmethod
     def serialize_datetime(value: datetime) -> str:
@@ -32,7 +32,7 @@ class MapperUtils:
             return value
         if isinstance(value, str):
             return datetime.fromisoformat(value)
-        raise ValueError(f"Invalid datetime value: {value}")
+        raise ValueError(f"Неверное значение datetime: {value}")
 
     @staticmethod
     def serialize_status(value: DocumentStatus) -> str:
@@ -58,7 +58,7 @@ class MapperUtils:
         if isinstance(obj, list):
             return [MapperUtils.to_json_serializable(item) for item in obj]
         if hasattr(obj, 'dict') and callable(getattr(obj, 'dict')):  # Для Pydantic моделей
-            return MapperUtils.to_json_serializable(obj.dict())
+            return MapperUtils.to_json_serializable(obj.model_dump())
         return obj
 
 class VersionMapper:
@@ -76,7 +76,7 @@ class VersionMapper:
         elif storage_type == "mongo":
             version_dict = version_data
         else:
-            raise ValueError(f"Unsupported storage type: {storage_type}")
+            raise ValueError(f"Неподдерживаемый тип хранилища: {storage_type}")
 
         version_dict['version_id'] = MapperUtils.deserialize_uuid(version_dict['version_id'])
         version_dict['timestamp'] = MapperUtils.deserialize_datetime(version_dict['timestamp'])

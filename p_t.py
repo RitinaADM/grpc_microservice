@@ -12,7 +12,6 @@ EXCLUDED_DIRS = {
     ".git",         # Репозиторий Git
     ".idea",
     ".pytest_cache",
-    "tests"
     #"proto"
 }
 
@@ -26,8 +25,7 @@ EXCLUDED_FILES = {
     "gen_jwt.py",
     "coverage.xml",
     "service_pb2.py",
-    "service_pb2_grpc"
-
+    "service_pb2_grpc",
 }
 
 def should_exclude(path: str, excluded_dirs: set, excluded_files: set) -> bool:

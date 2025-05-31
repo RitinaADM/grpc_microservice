@@ -25,7 +25,7 @@ class Document(BaseModel):
 
     class Config:
         json_encoders = {
-            UUID4: str  # Convert UUID to string during JSON serialization
+            UUID4: str  # Преобразует UUID в строку при сериализации в JSON
         }
 
 class DocumentVersion(BaseModel):
@@ -35,5 +35,5 @@ class DocumentVersion(BaseModel):
 
     class Config:
         json_encoders = {
-            UUID4: str  # Convert UUID to string during JSON serialization
+            UUID4: str  # Преобразует UUID в строку при сериализации в JSON
         }

@@ -1,60 +1,79 @@
-from pydantic import BaseModel, Field, validator
-from uuid import UUID
-from typing import Optional, List
+from pydantic import BaseModel, field_validator, ConfigDict
 from src.domain.models.document import DocumentStatus
+from typing import List, Optional
+from uuid import UUID
 
 class DocumentCreateDTO(BaseModel):
     title: str
     content: str
     status: DocumentStatus
-    author: str = Field(..., min_length=1, max_length=100)
-    tags: List[str] = Field(default_factory=list)
-    category: Optional[str] = None
-    comments: List[str] = Field(default_factory=list)
-
-    @validator("comments", each_item=True, pre=True)
-    def check_comments_not_empty(cls, v):
-        if v and not v.strip():
-            raise ValueError("Comment cannot be empty")
-        return v
-
-    @validator("title", "content", "author", pre=True)
-    def check_not_empty(cls, v):
-        if not v.strip():
-            raise ValueError("Field cannot be empty")
-        return v
-
-class DocumentUpdateDTO(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=255)
-    content: Optional[str] = Field(None, min_length=1)
-    status: Optional[DocumentStatus] = None
-    author: Optional[str] = Field(None, min_length=1, max_length=100)
+    author: str
     tags: Optional[List[str]] = None
     category: Optional[str] = None
     comments: Optional[List[str]] = None
 
-    @validator("title", "content", "author", pre=True)
-    def prevent_empty_string(cls, v):
-        if v == "":
-            raise ValueError("Field cannot be empty")
-        return v
+    model_config = ConfigDict(use_enum_values=True)
 
-    @validator("comments", each_item=True, pre=True)
-    def check_non_empty_comments(cls, v):
-        if v and not v.strip():
-            raise ValueError("Comment cannot be empty")
-        return v
+    @field_validator("comments", mode="before")
+    @classmethod
+    def validate_comments(cls, comments: Optional[List[str]]) -> Optional[List[str]]:
+        if comments:
+            for comment in comments:
+                if not comment or comment.strip() == "":
+                    raise ValueError("Комментарий не может быть пустым")
+        return comments
+
+    @field_validator("title", "content", "author", mode="before")
+    @classmethod
+    def validate_not_empty(cls, value: str, info) -> str:
+        if not value or value.strip() == "":
+            raise ValueError(f"Поле '{info.field_name}' не может быть пустым")
+        return value
+
+class DocumentUpdateDTO(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    status: Optional[DocumentStatus] = None
+    author: Optional[str] = None
+    tags: Optional[List[str]] = None
+    category: Optional[str] = None
+    comments: Optional[List[str]] = None
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    @field_validator("title", "content", "author", mode="before")
+    @classmethod
+    def validate_not_empty(cls, value: Optional[str], info) -> Optional[str]:
+        if value is not None and (not value or value.strip() == ""):
+            raise ValueError(f"Поле '{info.field_name}' не может быть пустым")
+        return value
+
+    @field_validator("comments", mode="before")
+    @classmethod
+    def validate_comments(cls, comments: Optional[List[str]]) -> Optional[List[str]]:
+        if comments:
+            for comment in comments:
+                if not comment or comment.strip() == "":
+                    raise ValueError("Комментарий не может быть пустым")
+        return comments
 
 class DocumentListDTO(BaseModel):
-    skip: int = Field(..., ge=0)
-    limit: int = Field(..., ge=1, le=100)
+    skip: int = 0
+    limit: int = 10
+
+    @field_validator("skip")
+    @classmethod
+    def validate_skip(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("Пропуск должен быть неотрицательным")
+        return value
 
 class DocumentIdDTO(BaseModel):
-    id: UUID = Field(..., description="UUID документа")
+    id: UUID
 
     @classmethod
     def from_string(cls, id_str: str) -> "DocumentIdDTO":
         try:
             return cls(id=UUID(id_str))
         except ValueError:
-            raise ValueError("Invalid UUID format")
+            raise ValueError("Неверный формат UUID")

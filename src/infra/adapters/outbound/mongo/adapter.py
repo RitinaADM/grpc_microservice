@@ -22,13 +22,13 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def get_by_id(self, id: UUID) -> Optional[Document]:
-        self.logger.debug(f"Getting document from MongoDB with ID: {id}")
+        self.logger.debug(f"Получение документа из MongoDB с ID: {id}")
         try:
             mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
             return self.mapper.to_domain_document(mongo_doc) if mongo_doc else None
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while fetching document {id}: {str(e)}")
-            raise BaseAppException(f"Failed to fetch document due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при получении документа {id}: {str(e)}")
+            raise BaseAppException(f"Не удалось получить документ из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -36,14 +36,14 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def create(self, document: Document) -> Document:
-        self.logger.debug(f"Creating document in MongoDB: {document.id}")
+        self.logger.debug(f"Создание документа в MongoDB: {document.id}")
         try:
             mongo_doc = self.mapper.to_mongo_document(document)
             await mongo_doc.insert()
             return document
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while creating document {document.id}: {str(e)}")
-            raise BaseAppException(f"Failed to create document due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при создании документа {document.id}: {str(e)}")
+            raise BaseAppException(f"Не удалось создать документ из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -51,11 +51,11 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def update(self, id: UUID, data: DocumentUpdateDTO) -> Optional[Document]:
-        self.logger.debug(f"Updating document in MongoDB with ID: {id}")
+        self.logger.debug(f"Обновление документа в MongoDB с ID: {id}")
         try:
             mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
             if not mongo_doc:
-                self.logger.warning(f"Document with ID: {id} not found or deleted")
+                self.logger.warning(f"Документ с ID: {id} не найден или удален")
                 return None
             current_version = DocumentVersion(
                 version_id=uuid4(),
@@ -81,8 +81,8 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
             await mongo_doc.save()
             return self.mapper.to_domain_document(mongo_doc)
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while updating document {id}: {str(e)}")
-            raise BaseAppException(f"Failed to update document due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при обновлении документа {id}: {str(e)}")
+            raise BaseAppException(f"Не удалось обновить документ из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -90,7 +90,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def delete(self, id: UUID) -> bool:
-        self.logger.debug(f"Soft deleting document from MongoDB with ID: {id}")
+        self.logger.debug(f"Мягкое удаление документа из MongoDB с ID: {id}")
         try:
             mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == False)
             if mongo_doc:
@@ -100,8 +100,9 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
                 return True
             return False
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while deleting document {id}: {str(e)}")
-            raise BaseAppException(f"Failed to delete document due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при удалении документа {id}: {str(e)}")
+            raise BaseAppException(f"Не удалось удалить документ;"
+                                  f" из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -109,13 +110,13 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def list_documents(self, skip: int, limit: int) -> List[Document]:
-        self.logger.debug(f"Listing documents from MongoDB with skip: {skip}, limit: {limit}")
+        self.logger.debug(f"Получение списка документов из MongoDB с пропуском: {skip}, лимитом: {limit}")
         try:
             mongo_docs = await MongoDocument.find(MongoDocument.is_deleted == False).skip(skip).limit(limit).to_list()
             return [self.mapper.to_domain_document(doc) for doc in mongo_docs]
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while listing documents: {str(e)}")
-            raise BaseAppException(f"Failed to list documents due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при получении списка документов: {str(e)}")
+            raise BaseAppException(f"Не удалось получить список документов из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -123,7 +124,7 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def restore(self, id: UUID) -> Optional[Document]:
-        self.logger.debug(f"Restoring document in MongoDB with ID: {id}")
+        self.logger.debug(f"Восстановление документа в MongoDB с ID: {id}")
         try:
             mongo_doc = await MongoDocument.find_one(MongoDocument.id == id, MongoDocument.is_deleted == True)
             if mongo_doc:
@@ -133,8 +134,8 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
                 return self.mapper.to_domain_document(mongo_doc)
             return None
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while restoring document {id}: {str(e)}")
-            raise BaseAppException(f"Failed to restore document due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при восстановлении документа {id}: {str(e)}")
+            raise BaseAppException(f"Не удалось восстановить документ из-за ошибки базы данных: {str(e)}")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -142,10 +143,10 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
     async def get_versions(self, id: UUID) -> List[DocumentVersion]:
-        self.logger.debug(f"Getting versions for document from MongoDB with ID: {id}")
+        self.logger.debug(f"Получение версий документа из MongoDB с ID: {id}")
         try:
             mongo_doc = await MongoDocument.find_one(MongoDocument.id == id)
             return mongo_doc.versions if mongo_doc else []
         except (ConnectionFailure, OperationFailure) as e:
-            self.logger.error(f"MongoDB error while fetching versions for document {id}: {str(e)}")
-            raise BaseAppException(f"Failed to fetch versions due to database error: {str(e)}")
+            self.logger.error(f"Ошибка MongoDB при получении версий документа {id}: {str(e)}")
+            raise BaseAppException(f"Не удалось получить версии документа из-за ошибки базы данных: {str(e)}")

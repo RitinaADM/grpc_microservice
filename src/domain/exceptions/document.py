@@ -2,7 +2,7 @@ from src.domain.exceptions.base import BaseAppException
 
 class DocumentNotFoundException(BaseAppException):
     def __str__(self):
-        return "Document not found"
+        return "Документ не найден"
 
 class InvalidInputException(BaseAppException):
     def __init__(self, message: str):

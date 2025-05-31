@@ -4,12 +4,14 @@ services:
     ports:
       - "${GRPC_PORT:-50051}:50051"
     environment:
-      - DB_TYPE=${DB_TYPE}
-      - DB_URL=${DB_URL}
-      - DB_NAME=${DB_NAME}
-      - GRPC_PORT=${GRPC_PORT}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - REDIS_URL=${REDIS_URL}
+      - DB_TYPE=${DB_TYPE:-MONGO}
+      - DB_NAME=${DB_NAME:-microservice_db}
+      - MONGO_URL=mongodb://mongo:27017
+      - POSTGRES_URL=postgresql+asyncpg://user:password@postgres:5432/microservice_db
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - GRPC_PORT=${GRPC_PORT:-50051}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDIS_TTL=${REDIS_TTL:-300}
     depends_on:
       - mongo
       - postgres
@@ -33,17 +35,3 @@ services:
     image: redis:7.2
     ports:
       - "6379:6379"
-
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    environment:
-      - DB_TYPE=${DB_TYPE}
-      - DB_URL=${DB_URL}
-      - DB_NAME=${DB_NAME}
-      - REDIS_URL=${REDIS_URL}
-    depends_on:
-      - mongo
-      - postgres
-      - redis

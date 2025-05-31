@@ -4,8 +4,9 @@ import uuid
 import grpc
 from grpc.aio import ServicerContext
 from pydantic import ValidationError
-from src.infra.adapters.inbound.grpc.py_proto import service_pb2_grpc, service_pb2
+
 from src.infra.adapters.inbound.grpc.mapper import GrpcMapper
+from src.infra.adapters.inbound.grpc.py_proto import service_pb2_grpc, service_pb2
 from src.domain.ports.inbound.services.document import DocumentServicePort
 from src.domain.exceptions.document import DocumentNotFoundException
 from src.domain.exceptions.base import BaseAppException
@@ -18,7 +19,7 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
     """gRPC-сервис для управления документами, реализующий DocumentServiceServicer из Protobuf."""
 
     def __init__(self, service: DocumentServicePort):
-        """Инициализирует сервис с внедренной зависимостью DocumentServicePort.
+        """Инициализирует сервис с зависимостью DocumentServicePort.
 
         Args:
             service: Сервис для выполнения бизнес-логики с документами.
@@ -185,12 +186,12 @@ class DocumentServiceServicer(service_pb2_grpc.DocumentServiceServicer):
             gRPC ListDocumentsResponse со списком документов.
         """
         request_id = str(uuid.uuid4())[:8]
-        self.logger.info(f"Получен запрос ListDocuments с skip: {request.skip}, limit: {request.limit}",
+        self.logger.info(f"Получен запрос ListDocuments с пропуском: {request.skip}, лимитом: {request.limit}",
                          extra={"request_id": request_id})
-        self.logger.debug(f"Event loop: {asyncio.get_running_loop()}")
+        self.logger.debug(f"Цикл событий: {asyncio.get_running_loop()}")
 
         async def handle():
-            self.logger.info("Обрабатываем ListDocuments")
+            self.logger.info("Обрабатываем запрос ListDocuments")
             params = self.mapper.to_list_dto(request)
             documents = await self.service.list_documents(params)
             return self.mapper.to_grpc_list_response(documents)

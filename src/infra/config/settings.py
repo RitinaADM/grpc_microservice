@@ -1,23 +1,30 @@
 from enum import Enum
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-from typing import Literal
 
-class DatabaseType(Enum):
-    """Типы поддерживаемых баз данных."""
+class DatabaseType(str, Enum):
     MONGO = "MONGO"
     POSTGRES = "POSTGRES"
 
 class Settings(BaseSettings):
-    """Конфигурация приложения, загружаемая из .env файла."""
-    DB_TYPE: DatabaseType
-    DB_URL: str
-    DB_NAME: str
-    GRPC_PORT: int = 50051
-    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    DB_TYPE: DatabaseType = DatabaseType.MONGO
+    DB_NAME: str = "microservice_db"
+    MONGO_URL: str = "mongodb://mongo:27017"
+    POSTGRES_URL: str = "postgresql+asyncpg://user:password@postgres:5432/microservice_db"
     REDIS_URL: str = "redis://redis:6379/0"
-    CACHE_TTL: int = Field(default=300, ge=60)  # Время жизни кэша в секундах
+    GRPC_PORT: int = 50051
+    LOG_LEVEL: str = "INFO"
+    CACHE_TTL: int = 300
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    @property
+    def DB_URL(self) -> str:
+        if self.DB_TYPE == DatabaseType.MONGO:
+            return f"{self.MONGO_URL}/{self.DB_NAME}"
+        return self.POSTGRES_URL
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Игнорировать лишние поля
+    )
 
 settings = Settings()

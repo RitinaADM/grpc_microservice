@@ -125,4 +125,4 @@ class GrpcMapper(BaseMapper[Document]):
         try:
             return status_map[grpc_status]
         except KeyError:
-            raise ValueError(f"Invalid gRPC status: {grpc_status}")
+            raise ValueError(f"Неверный статус gRPC: {grpc_status}")
