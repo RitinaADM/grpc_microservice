@@ -15,3 +15,5 @@ beanie==1.29.0
 motor==3.7.1
 #Redis
 redis==5.0.8
+#JWT
+pyjwt==2.9.0

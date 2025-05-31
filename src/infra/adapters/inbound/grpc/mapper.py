@@ -1,8 +1,7 @@
 import logging
 from typing import List
-from uuid import UUID
 from src.infra.adapters.inbound.grpc.py_proto import service_pb2
-from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
+from src.application.document.dto import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
 from src.domain.models.document import Document, DocumentStatus, DocumentVersion
 from src.domain.ports.outbound.mappers.base import BaseMapper
 from src.infra.adapters.outbound.mappers.utils import MapperUtils

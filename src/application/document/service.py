@@ -1,11 +1,10 @@
 from typing import List
 from uuid import UUID
-from datetime import datetime
 from src.domain.models.document import Document, DocumentVersion
 from src.domain.ports.inbound.services.document import DocumentServicePort
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
 from src.domain.exceptions.document import DocumentNotFoundException
-from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
+from src.application.document.dto import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
 from src.infra.adapters.outbound.redis.adapter import RedisCacheAdapter
 from src.domain.exceptions.base import BaseAppException
 import logging
@@ -37,7 +36,7 @@ class DocumentService(DocumentServicePort):
         self.logger.info(f"Создание нового документа с заголовком: {data.title}")
         try:
             document = Document(**data.model_dump())
-            created_document = await self.repository.create(document)
+            created_document = await self.repository.save(document)
             await self.cache.set_document(created_document)
             await self.cache.set_document_versions(str(created_document.id), created_document.versions)
             await self.cache.invalidate_document_list()

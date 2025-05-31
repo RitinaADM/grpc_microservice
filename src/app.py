@@ -8,6 +8,7 @@ from src.infra.adapters.inbound.grpc.py_proto import service_pb2, service_pb2_gr
 from src.infra.adapters.inbound.grpc.adapter import DocumentServiceServicer
 from src.infra.config.settings import settings
 from src.infra.config.logging import setup_logging
+from src.infra.auth.interceptor import JWTAuthInterceptor
 
 async def serve():
     setup_logging()
@@ -20,7 +21,7 @@ async def serve():
         # Создаем временный контекст запроса для получения сервисера
         async with container() as request_container:
             servicer = await request_container.get(DocumentServiceServicer)
-        server = grpc.aio.server()
+        server = grpc.aio.server(interceptors=[JWTAuthInterceptor()])
 
         # Добавляем сервисер
         service_pb2_grpc.add_DocumentServiceServicer_to_server(servicer, server)

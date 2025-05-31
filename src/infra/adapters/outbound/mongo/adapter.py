@@ -7,7 +7,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from src.domain.models.document import Document, DocumentVersion
 from src.infra.adapters.outbound.mongo.models import MongoDocument
 from src.domain.ports.outbound.repository.document import DocumentRepositoryPort
-from src.domain.dtos.document import DocumentUpdateDTO
+from src.application.document.dto import DocumentUpdateDTO
 from src.infra.adapters.outbound.mongo.mapper import MongoMapper
 from src.domain.exceptions.base import BaseAppException
 
@@ -35,11 +35,11 @@ class MongoDocumentAdapter(DocumentRepositoryPort):
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type((ConnectionFailure, OperationFailure))
     )
-    async def create(self, document: Document) -> Document:
+    async def save(self, document: Document) -> Document:
         self.logger.debug(f"Создание документа в MongoDB: {document.id}")
         try:
             mongo_doc = self.mapper.to_mongo_document(document)
-            await mongo_doc.insert()
+            await mongo_doc.save()
             return document
         except (ConnectionFailure, OperationFailure) as e:
             self.logger.error(f"Ошибка MongoDB при создании документа {document.id}: {str(e)}")

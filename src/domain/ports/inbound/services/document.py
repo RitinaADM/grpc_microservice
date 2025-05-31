@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from src.domain.models.document import Document, DocumentVersion
-from src.domain.dtos.document import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
+from src.application.document.dto import DocumentCreateDTO, DocumentUpdateDTO, DocumentListDTO, DocumentIdDTO
 from typing import List
 from uuid import UUID
 

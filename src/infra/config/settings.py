@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     GRPC_PORT: int = 50051
     LOG_LEVEL: str = "INFO"
     CACHE_TTL: int = 300
+    # JWT settings
+    JWT_AUTH_ENABLED: bool = False
+    JWT_SECRET_KEY: str = "your-secret-key-here"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_TOKEN_TTL: int = 3600
 
     @property
     def DB_URL(self) -> str:
@@ -24,7 +29,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"  # Игнорировать лишние поля
+        extra="ignore"
     )
 
 settings = Settings()

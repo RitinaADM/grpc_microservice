@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from uuid import UUID
 from src.domain.models.document import Document, DocumentVersion
-from src.domain.dtos.document import DocumentUpdateDTO
+from src.application.document.dto import DocumentUpdateDTO
 
 class DocumentRepositoryPort(ABC):
     @abstractmethod
@@ -10,7 +10,7 @@ class DocumentRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def create(self, document: Document) -> Document:
+    async def save(self, document: Document) -> Document:
         pass
 
     @abstractmethod
